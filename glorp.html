@@ -91,6 +91,7 @@ input[type=number]{width:82px}
 #lotto{display:none;position:fixed;inset:0;z-index:60;background:#07040ff5;backdrop-filter:blur(5px);
   align-items:center;justify-content:center;flex-direction:column;gap:14px;cursor:pointer}
 #lotto.on{display:flex}
+body.lotto .wrap,body.lotto #rain{visibility:hidden}
 #cv{border-radius:24px;box-shadow:0 0 80px #ff4fd844;background:#0d0819;border:4px solid var(--line);
   max-width:96vw;max-height:74vh}
 .lotto-txt{letter-spacing:4px;color:var(--acc);font-size:15px;text-transform:uppercase}
@@ -358,26 +359,33 @@ function renderGroups(){
 }
 
 /* ---- глорпотрон ---- */
-const sprites={};            /* предрендер: круглый спрайт глорпа, чтобы не лагало */
-function sprite(i,size){
-  const k=i+"_"+size;
-  if(sprites[k]) return sprites[k];
-  const c=document.createElement("canvas"); c.width=c.height=size;
+/* круглые спрайты рисуются ОДИН раз (при загрузке картинки), в кадре только drawImage */
+const SPR=64, sprites=[], sprReady=[];
+function drawSprite(i){
+  let c=sprites[i];
+  if(!c){ c=sprites[i]=document.createElement("canvas"); c.width=c.height=SPR; }
   const x=c.getContext("2d");
-  x.save(); x.beginPath(); x.arc(size/2,size/2,size/2,0,6.283); x.closePath(); x.clip();
-  x.fillStyle="#1b1033"; x.fillRect(0,0,size,size);
+  x.clearRect(0,0,SPR,SPR);
+  x.save(); x.beginPath(); x.arc(SPR/2,SPR/2,SPR/2,0,6.283); x.closePath(); x.clip();
+  x.fillStyle="#1b1033"; x.fillRect(0,0,SPR,SPR);
   const im=preload[i];
-  const ready=im&&im.complete&&im.naturalWidth;
-  if(ready){
-    const s=Math.min(size/im.naturalWidth,size/im.naturalHeight)*0.99;
+  if(im&&im.complete&&im.naturalWidth){
+    const s=Math.min(SPR/im.naturalWidth,SPR/im.naturalHeight)*0.99;
     const w=im.naturalWidth*s,h=im.naturalHeight*s;
-    x.drawImage(im,(size-w)/2,(size-h)/2,w,h);
+    x.drawImage(im,(SPR-w)/2,(SPR-h)/2,w,h);
+    sprReady[i]=1;
   }
   x.restore();
-  if(ready) sprites[k]=c;   /* пока картинка не догрузилась — не кешируем пустой спрайт */
   return c;
 }
-const preload=IMGS.map(o=>{const im=new Image();im.src=o.d;return im;});
+const preload=IMGS.map((o,i)=>{
+  const im=new Image();
+  im.onload=()=>{ if(!sprReady[i]) drawSprite(i); };
+  im.src=o.d;
+  return im;
+});
+IMGS.forEach((_,i)=>drawSprite(i));
+const sprite=i=>sprites[i]||drawSprite(i);
 
 function runLotto(done){
   const cv=$("#cv"),ctx=cv.getContext("2d"),W=cv.width,H=cv.height;
@@ -402,7 +410,7 @@ function runLotto(done){
   }));
   const byKey={}; balls.forEach(b=>byKey[b.gi+"_"+b.pi]=b);
 
-  $("#lotto").classList.add("on");
+  $("#lotto").classList.add("on"); document.body.classList.add("lotto");
   const MIX=4200, STEP=95;
   let t0=performance.now(), issued=0, skip=false, fin=0, pull=false, closeNow=false;
   cv.onclick=ev=>{
@@ -417,7 +425,9 @@ function runLotto(done){
   };
   const onEsc=e=>{ if(e.key==="Escape") skip=true; };
   document.addEventListener("keydown",onEsc);
-  $("#lottoTxt").textContent=manual?"тыкни в барабан — вылетит глорп":"глорпы глорпаются…";
+  let lastTxt="";
+  const say=t=>{ if(t!==lastTxt){ lastTxt=t; $("#lottoTxt").textContent=t; } };
+  say(manual?"тыкни в барабан — вылетит глорп":"глорпы глорпаются…");
 
   function slot(gi,pi){
     const cx=zoneX+(gi%cols)*cw, cy=18+Math.floor(gi/cols)*ch;
@@ -477,14 +487,14 @@ function runLotto(done){
       const b=byKey[gi+"_"+pi];
       const s=slot(gi,pi);
       b.st=1; b.sx=b.x; b.sy=b.y; b.tx=s.x; b.ty=s.y; b.t0=now; b.dur=skip?1:420;
-      $("#lottoTxt").textContent=b.m.p.name+" → глурпа "+(gi+1);
+      say(b.m.p.name+" → глурпа "+(gi+1));
     }
     if(manual&&!skip){
       const left=order.length-issued;
       if(left>0&&balls.every(b=>b.st!==1))
-        $("#lottoTxt").textContent="тыкни в барабан · осталось "+left;
+        say("тыкни в барабан · осталось "+left);
       else if(left===0&&balls.every(b=>b.st===2))
-        $("#lottoTxt").textContent="всё · клик — к глурпам";
+        say("всё · клик — к глурпам");
     }
     for(const b of balls){
       if(b.st===1){
@@ -497,7 +507,7 @@ function runLotto(done){
     /* рисуем */
     for(const b of balls){
       const sz=Math.round(b.r*2);
-      ctx.drawImage(sprite(b.av,64),b.x-b.r,b.y-b.r,sz,sz);
+      ctx.drawImage(sprite(b.av),b.x-b.r,b.y-b.r,sz,sz);
       ctx.beginPath();ctx.arc(b.x,b.y,b.r,0,6.283);ctx.strokeStyle=b.c;ctx.lineWidth=b.st===2?2:3;ctx.stroke();
       if(b.st===2&&now-b.flash<260){
         ctx.beginPath();ctx.arc(b.x,b.y,b.r+(now-b.flash)/6,0,6.283);
@@ -515,7 +525,7 @@ function runLotto(done){
     if(allDone&&!fin) fin=now;
     const wait=skip?200:(manual?20000:900);
     if(fin&&(now-fin>wait||closeNow)){
-      $("#lotto").classList.remove("on"); $("#lotto").onclick=null; cv.onclick=null;
+      $("#lotto").classList.remove("on"); document.body.classList.remove("lotto"); $("#lotto").onclick=null; cv.onclick=null;
       document.removeEventListener("keydown",onEsc); done(); return;
     }
     requestAnimationFrame(frame);
