@@ -48,6 +48,7 @@ input:focus,select:focus{outline:none;border-color:var(--acc)}
 input[type=number]{width:82px}
 .hint{color:var(--dim);font-size:13px;margin-top:8px}
 .err{color:var(--bad)}.ok{color:var(--acc)}
+.hint.ok{color:var(--dim);font-size:12px;opacity:.65}
 .stats{display:flex;gap:16px;flex-wrap:wrap;color:var(--dim);font-size:13px}
 .stats b{color:var(--acc);font-size:17px}
 .av{object-fit:contain;background:#150d29;border-radius:12px;cursor:pointer;flex:none;transition:.13s;padding:2px}
@@ -87,6 +88,13 @@ input[type=number]{width:82px}
 .p .seed{width:28px;text-align:center;color:#160b2b;background:var(--acc);border-radius:50%;font-size:12px;font-weight:700;flex:none;line-height:28px;height:28px}
 .p .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px}
 .p .mn{color:var(--dim);font-size:11px;max-width:86px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.p{cursor:grab}
+.p:active{cursor:grabbing}
+.p.dragging{opacity:.35}
+.g.over{border-color:var(--acc);box-shadow:0 0 0 3px #8bff5a44,0 0 26px #8bff5a33}
+.gname{cursor:text}
+.gname.edit{outline:2px solid var(--acc);border-radius:8px;padding:1px 5px;cursor:text}
+.gsub{color:var(--dim);font-size:12px}
 /* лототрон */
 #lotto{display:none;position:fixed;inset:0;z-index:60;background:#07040ff5;backdrop-filter:blur(5px);
   align-items:center;justify-content:center;flex-direction:column;gap:14px;cursor:pointer}
@@ -160,7 +168,7 @@ body.lotto .wrap,body.lotto #rain{visibility:hidden}
     <button id="rerollAv" class="mini">перекатить глорпов глурп</button>
     <button id="copy" class="mini">скопировать</button>
   </div>
-  <div class="hint" id="feas">—</div>
+  <div class="hint" id="feas"></div>
 </div>
 
 <div id="result"></div>
@@ -303,7 +311,7 @@ function render(){
 }
 function checkFeas(){
   const n=+$("#ng").value, mx=Math.max(0,...fams.map(f=>f.students.length)), tot=students().length, el=$("#feas");
-  if(!tot){el.className="hint";el.textContent="—";return;}
+  if(!tot){el.className="hint";el.textContent="";return;}
   if(mx>n){ el.className="hint err"; el.textContent="глурп мало: у одного глорптора "+mx+" миниглорпов → нужно минимум "+mx; }
   else { el.className="hint ok"; el.textContent=tot+" миниглорпов → "+n+" глурп (~"+Math.floor(tot/n)+"–"+Math.ceil(tot/n)+" в глурпе)"; }
 }
@@ -331,12 +339,14 @@ function conflicts(gs){
   gs.forEach((g,gi)=>{const seen={};g.forEach(p=>{if(seen[p.fam])bad.push("глурпа "+(gi+1));seen[p.fam]=1;});});
   return bad;
 }
-function renderGroups(){
+function gTitle(i){ return avatars[i].title||gName(avatars[i].av); }
+let dragSrc=null;
+function renderGroups(keepScroll){
   groups.forEach(g=>g.sort((a,b)=>a.p.seed-b.p.seed));
   const bad=conflicts(groups);
-  $("#result").innerHTML='<div class="card"><h2>🏆 глурпы</h2><div class="hint '+(bad.length?"err":"ok")+'">'+
-    (bad.length?"ГЛОРПОКОНФЛИКТ: "+bad.join(", "):"чисто: миниглорпы одного глорптора разглорпаны по разным глурпам")+
-    '</div><div class="groups" id="gr"></div></div>';
+  $("#result").innerHTML='<div class="card"><h2>🏆 глурпы</h2>'+
+    (bad.length?'<div class="hint err">ГЛОРПОКОНФЛИКТ: '+esc(bad.join(", "))+'</div>':'')+
+    '<div class="groups" id="gr"></div></div>';
   const gr=$("#gr");
   groups.forEach((g,i)=>{
     const d=document.createElement("div"); d.className="g"; d.style.animationDelay=(i*80)+"ms";
@@ -344,11 +354,31 @@ function renderGroups(){
     const gav=document.createElement("img"); gav.className="gav"; gav.src=IMGS[avatars[i].av].d;
     gav.title="выбрать глорпа глурпы";
     gav.onclick=ev=>openPop(ev,avatars[i],renderGroups);
-    const t=document.createElement("div");
-    t.innerHTML='<div class="gname">'+esc(gName(avatars[i].av))+'</div><div class="gsub">глурпа '+(i+1)+' · '+g.length+' шт.</div>';
+    const t=document.createElement("div"); t.style.minWidth="0";
+    const nameEl=document.createElement("div"); nameEl.className="gname"; nameEl.textContent=gTitle(i);
+    nameEl.title="двойной клик — переименовать";
+    nameEl.ondblclick=()=>{
+      nameEl.contentEditable="true"; nameEl.classList.add("edit"); nameEl.focus();
+      const r=document.createRange(); r.selectNodeContents(nameEl);
+      const sel=getSelection(); sel.removeAllRanges(); sel.addRange(r);
+    };
+    nameEl.onkeydown=e=>{ if(e.key==="Enter"){e.preventDefault();nameEl.blur();} if(e.key==="Escape"){nameEl.textContent=gTitle(i);nameEl.blur();} };
+    nameEl.onblur=()=>{
+      nameEl.contentEditable="false"; nameEl.classList.remove("edit");
+      const v=nameEl.textContent.trim();
+      if(!v||v===gName(avatars[i].av)) delete avatars[i].title; else avatars[i].title=v;
+      nameEl.textContent=gTitle(i);
+    };
+    const sub=document.createElement("div"); sub.className="gsub"; sub.textContent="глурпа "+(i+1)+" · "+g.length+" шт.";
+    t.append(nameEl,sub);
     head.append(gav,t); d.appendChild(head);
-    g.forEach(m=>{
-      const row=document.createElement("div"); row.className="p";
+    g.forEach((m,pi)=>{
+      const row=document.createElement("div"); row.className="p"; row.draggable=true;
+      row.ondragstart=ev=>{ dragSrc={gi:i,pi:pi}; ev.dataTransfer.effectAllowed="move";
+        try{ev.dataTransfer.setData("text/plain","p");}catch(e){}
+        requestAnimationFrame(()=>row.classList.add("dragging")); };
+      row.ondragend=()=>{ dragSrc=null; row.classList.remove("dragging");
+        document.querySelectorAll(".g.over").forEach(x=>x.classList.remove("over")); };
       const s=document.createElement("span"); s.className="seed"; s.textContent=m.p.seed;
       row.appendChild(s);
       row.appendChild(avEl(m.p,"av-p",renderGroups));
@@ -357,9 +387,19 @@ function renderGroups(){
       row.append(nm,mn);
       d.appendChild(row);
     });
+    d.ondragover=ev=>{ if(!dragSrc) return; ev.preventDefault(); ev.dataTransfer.dropEffect="move";
+      if(dragSrc.gi!==i) d.classList.add("over"); };
+    d.ondragleave=ev=>{ if(!d.contains(ev.relatedTarget)) d.classList.remove("over"); };
+    d.ondrop=ev=>{
+      ev.preventDefault(); d.classList.remove("over");
+      if(!dragSrc||dragSrc.gi===i) return;
+      const m=groups[dragSrc.gi].splice(dragSrc.pi,1)[0];
+      groups[i].push(m); dragSrc=null;
+      renderGroups(true);
+    };
     gr.appendChild(d);
   });
-  $("#result").scrollIntoView({behavior:"smooth",block:"start"});
+  if(!keepScroll) $("#result").scrollIntoView({behavior:"smooth",block:"start"});
 }
 
 /* ---- глорпотрон ---- */
@@ -471,6 +511,22 @@ function runLotto(done){
   const onEsc=e=>{ if(e.key==="Escape") abort=true; };
   document.addEventListener("keydown",onEsc);
   $("#lottoX").onclick=ev=>{ ev.stopPropagation(); abort=true; };
+  /* статичный слой зон рисуем один раз */
+  const bg=document.createElement("canvas"); bg.width=W; bg.height=H;
+  const bgx=bg.getContext("2d");
+  bgx.textAlign="left";
+  for(let gi=0;gi<nG;gi++){
+    const bx={x:zoneX+(gi%cols)*cw+(cw-BW)/2, y:12+Math.floor(gi/cols)*ch+(ch-BH)/2};
+    bgx.fillStyle="#170f2bcc";
+    bgx.beginPath();bgx.roundRect(bx.x,bx.y,BW,BH,Math.min(14,BW/6,BH/6));bgx.fill();
+    bgx.strokeStyle="#33235c";bgx.lineWidth=2;bgx.stroke();
+    bgx.fillStyle="#ffe14f";bgx.font="bold "+headFont+"px 'Comic Sans MS',sans-serif";
+    bgx.fillText("глурпа "+(gi+1),bx.x+PAD,bx.y+HEAD-9,BW-PAD*2);
+  }
+  const mixing=balls.slice();          /* мячи, которые ещё крутятся */
+  let flying=0, landed=0;              /* st===1 / st===2 — вместо every() каждый кадр */
+  let prev=t0, acc=0;
+  const DT=1000/60, MAXSTEP=3;
   let lastTxt="", lastPick="";
   const say=t=>{ if(t!==lastTxt){ lastTxt=t; $("#lottoTxt").textContent=t; } };
   say(manual?"тыкни в барабан — вылетит глорп":"глорпы глорпаются…");
@@ -489,7 +545,10 @@ function runLotto(done){
   }
   function frame(now){
     const el=now-t0;
+    let dt=now-prev; prev=now; if(dt>120) dt=120; acc+=dt;
+    let steps=0; while(acc>=DT && steps<MAXSTEP){ acc-=DT; steps++; }
     ctx.clearRect(0,0,W,H);
+    ctx.drawImage(bg,0,0);
     /* барабан */
     const spin=el/300;
     ctx.save();ctx.translate(drum.x,drum.y);ctx.rotate(spin);
@@ -499,20 +558,9 @@ function runLotto(done){
     ctx.beginPath();ctx.arc(drum.x,drum.y,drum.r,0,6.283);
     ctx.strokeStyle="#8bff5a55";ctx.lineWidth=6;ctx.stroke();
 
-    /* зоны глурп */
-    ctx.textAlign="left";
-    for(let gi=0;gi<nG;gi++){
-      const bx=box(gi);
-      ctx.fillStyle="#170f2bcc";
-      ctx.beginPath();ctx.roundRect(bx.x,bx.y,BW,BH,Math.min(14,BW/6,BH/6));ctx.fill();
-      ctx.strokeStyle="#33235c";ctx.lineWidth=2;ctx.stroke();
-      ctx.fillStyle="#ffe14f";ctx.font="bold "+headFont+"px 'Comic Sans MS',sans-serif";
-      ctx.fillText("глурпа "+(gi+1),bx.x+PAD,bx.y+HEAD-9,BW-PAD*2);
-    }
-
-    /* физика для тех, кто ещё в барабане */
-    const mixing=balls.filter(b=>b.st===0);
+    /* физика: фикс. шаг 60 Гц, не зависит от частоты монитора */
     const sw=Math.sin(el/110)*1.1;
+    for(let st=0;st<steps;st++){
     for(const b of mixing){
       b.vy+=.4; b.vx+=sw*.35; b.x+=b.vx; b.y+=b.vy;
       const dx=b.x-drum.x,dy=b.y-drum.y,d=Math.hypot(dx,dy)||1;
@@ -524,10 +572,13 @@ function runLotto(done){
       }
     }
     for(let i=0;i<mixing.length;i++)for(let j=i+1;j<mixing.length;j++){
-      const a=mixing[i],b=mixing[j],dx=b.x-a.x,dy=b.y-a.y,d=Math.hypot(dx,dy)||1,ov=a.r+b.r-d;
-      if(ov>0){const nx=dx/d,ny=dy/d;a.x-=nx*ov/2;a.y-=ny*ov/2;b.x+=nx*ov/2;b.y+=ny*ov/2;
-        const t=(a.vx-b.vx)*nx+(a.vy-b.vy)*ny;
-        if(t>0){a.vx-=t*nx*.5;a.vy-=t*ny*.5;b.vx+=t*nx*.5;b.vy+=t*ny*.5;}}
+      const a=mixing[i],b=mixing[j],dx=b.x-a.x,dy=b.y-a.y,rr=a.r+b.r,d2=dx*dx+dy*dy;
+      if(d2>=rr*rr||d2===0) continue;
+      const d=Math.sqrt(d2),ov=rr-d,nx=dx/d,ny=dy/d;
+      a.x-=nx*ov/2;a.y-=ny*ov/2;b.x+=nx*ov/2;b.y+=ny*ov/2;
+      const t=(a.vx-b.vx)*nx+(a.vy-b.vy)*ny;
+      if(t>0){a.vx-=t*nx*.5;a.vy-=t*ny*.5;b.vx+=t*nx*.5;b.vy+=t*ny*.5;}
+    }
     }
 
     /* выдача */
@@ -540,14 +591,16 @@ function runLotto(done){
       const b=byKey[gi+"_"+pi];
       const s=slot(gi,pi);
       b.st=1; b.sx=b.x; b.sy=b.y; b.tx=s.x; b.ty=s.y; b.t0=now; b.dur=skip?1:420;
+      const mi=mixing.indexOf(b); if(mi>=0) mixing.splice(mi,1);
+      flying++;
       lastPick=b.m.p.name+" → глурпа "+(gi+1);
       say(lastPick);
     }
     if(manual&&!skip){
       const left=order.length-issued;
-      if(left>0&&balls.every(b=>b.st!==1))
+      if(left>0&&flying===0)
         say(lastPick?lastPick+" · осталось "+left:"тыкни в барабан — вылетит глорп");
-      else if(left===0&&balls.every(b=>b.st===2))
+      else if(left===0&&landed===balls.length)
         say("всё · клик — к глурпам");
     }
     for(const b of balls){
@@ -555,7 +608,7 @@ function runLotto(done){
         const k=Math.min(1,(now-b.t0)/b.dur), e=1-Math.pow(1-k,3);
         b.x=b.sx+(b.tx-b.sx)*e; b.y=b.sy+(b.ty-b.sy)*e-Math.sin(e*Math.PI)*90;
         b.r=R+(LR-R)*e;
-        if(k>=1){b.st=2;b.flash=now;}
+        if(k>=1){b.st=2;b.flash=now;flying--;landed++;}
       }
     }
     /* рисуем */
@@ -583,7 +636,7 @@ function runLotto(done){
     ctx.textBaseline="alphabetic";
 
     if(abort){ close(); return; }
-    const allDone=balls.every(b=>b.st===2);
+    const allDone=landed===balls.length;
     if(allDone&&!fin) fin=now;
     const wait=skip?200:(manual?20000:900);
     if(fin&&(now-fin>wait||closeNow)){ close(); return; }
@@ -703,7 +756,7 @@ $("#go").onclick=()=>{
 };
 $("#copy").onclick=()=>{
   if(!groups)return;
-  const t=groups.map((g,i)=>gName(avatars[i].av)+" (глурпа "+(i+1)+")\n"+
+  const t=groups.map((g,i)=>gTitle(i)+" (глурпа "+(i+1)+")\n"+
     g.map(m=>m.p.seed+". "+m.p.name+" — "+fams[m.fam].mentor.name).join("\n")).join("\n\n");
   navigator.clipboard.writeText(t);
   $("#copy").textContent="ок ✓";setTimeout(()=>$("#copy").textContent="скопировать",1400);
