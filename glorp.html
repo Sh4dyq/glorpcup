@@ -525,7 +525,7 @@ function runLotto(done){
   }
   const mixing=balls.slice();          /* мячи, которые ещё крутятся */
   let flying=0, landed=0;              /* st===1 / st===2 — вместо every() каждый кадр */
-  let prev=t0, acc=0;
+  let prev=t0, acc=0, spin=0;
   const DT=1000/60, MAXSTEP=3;
   let lastTxt="", lastPick="";
   const say=t=>{ if(t!==lastTxt){ lastTxt=t; $("#lottoTxt").textContent=t; } };
@@ -545,12 +545,13 @@ function runLotto(done){
   }
   function frame(now){
     const el=now-t0;
-    let dt=now-prev; prev=now; if(dt>120) dt=120; acc+=dt;
+    let dt=now-prev; prev=now; if(dt>120) dt=120;
+    acc+=dt; if(acc>DT*MAXSTEP) acc=DT*MAXSTEP;   /* не копим долг — иначе рывки после лага */
     let steps=0; while(acc>=DT && steps<MAXSTEP){ acc-=DT; steps++; }
+    spin+=dt/300;                                 /* угол по реальному dt */
     ctx.clearRect(0,0,W,H);
     ctx.drawImage(bg,0,0);
     /* барабан */
-    const spin=el/300;
     ctx.save();ctx.translate(drum.x,drum.y);ctx.rotate(spin);
     ctx.strokeStyle="#2c1c52";ctx.lineWidth=4;
     for(let i=0;i<10;i++){ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(Math.cos(i*.628)*drum.r,Math.sin(i*.628)*drum.r);ctx.stroke();}
