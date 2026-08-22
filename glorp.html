@@ -94,6 +94,10 @@ input[type=number]{width:82px}
 body.lotto .wrap,body.lotto #rain{visibility:hidden}
 #cv{border-radius:24px;box-shadow:0 0 80px #ff4fd844;background:#0d0819;border:4px solid var(--line);
   max-width:96vw;max-height:74vh}
+#lottoX{position:fixed;top:16px;right:20px;z-index:61;width:44px;height:44px;border-radius:50%;
+  border:2px solid var(--line);background:#170f2bcc;color:#fff;font-size:22px;line-height:1;
+  cursor:pointer;display:flex;align-items:center;justify-content:center}
+#lottoX:hover{border-color:var(--acc);color:var(--acc)}
 .lotto-txt{letter-spacing:4px;color:var(--acc);font-size:15px;text-transform:uppercase}
 /* поповер выбора глорпа */
 #pop{display:none;position:absolute;z-index:80;width:min(430px,92vw);
@@ -162,7 +166,7 @@ body.lotto .wrap,body.lotto #rain{visibility:hidden}
 <div id="result"></div>
 </div>
 
-<div id="lotto"><canvas id="cv" width="1040" height="600"></canvas><div class="lotto-txt" id="lottoTxt">глорпы глорпаются…</div></div>
+<div id="lotto"><button id="lottoX" type="button" title="отменить шафл (Esc)">✕</button><canvas id="cv" width="1040" height="600"></canvas><div class="lotto-txt" id="lottoTxt">глорпы глорпаются…</div></div>
 
 <div id="pop"><input id="popq" placeholder="искать глорпа…"><div class="poprow"><small>клик по картинке — выбрать · по названию — переименовать</small><button class="mini" id="resetNames">сброс имён</button></div><div class="pgrid" id="pgrid"></div></div>
 
@@ -412,7 +416,7 @@ function runLotto(done){
 
   $("#lotto").classList.add("on"); document.body.classList.add("lotto");
   const MIX=4200, STEP=95;
-  let t0=performance.now(), issued=0, skip=false, fin=0, pull=false, closeNow=false;
+  let t0=performance.now(), issued=0, skip=false, fin=0, pull=false, closeNow=false, abort=false;
   cv.onclick=ev=>{
     if(!manual){ skip=true; return; }
     const r=cv.getBoundingClientRect();
@@ -423,12 +427,18 @@ function runLotto(done){
     if(ev.target===cv) return;
     if(manual){ if(issued>=order.length) closeNow=true; } else skip=true;
   };
-  const onEsc=e=>{ if(e.key==="Escape") skip=true; };
+  const onEsc=e=>{ if(e.key==="Escape") abort=true; };
   document.addEventListener("keydown",onEsc);
+  $("#lottoX").onclick=ev=>{ ev.stopPropagation(); abort=true; };
   let lastTxt="", lastPick="";
   const say=t=>{ if(t!==lastTxt){ lastTxt=t; $("#lottoTxt").textContent=t; } };
   say(manual?"тыкни в барабан — вылетит глорп":"глорпы глорпаются…");
 
+  function close(){
+    $("#lotto").classList.remove("on"); document.body.classList.remove("lotto");
+    $("#lotto").onclick=null; cv.onclick=null; $("#lottoX").onclick=null;
+    document.removeEventListener("keydown",onEsc); done();
+  }
   function slot(gi,pi){
     const cx=zoneX+(gi%cols)*cw, cy=18+Math.floor(gi/cols)*ch;
     const per=Math.max(1,Math.floor((cw-14)/30));
@@ -522,13 +532,11 @@ function runLotto(done){
     }
     ctx.textBaseline="alphabetic";
 
+    if(abort){ close(); return; }
     const allDone=balls.every(b=>b.st===2);
     if(allDone&&!fin) fin=now;
     const wait=skip?200:(manual?20000:900);
-    if(fin&&(now-fin>wait||closeNow)){
-      $("#lotto").classList.remove("on"); document.body.classList.remove("lotto"); $("#lotto").onclick=null; cv.onclick=null;
-      document.removeEventListener("keydown",onEsc); done(); return;
-    }
+    if(fin&&(now-fin>wait||closeNow)){ close(); return; }
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
