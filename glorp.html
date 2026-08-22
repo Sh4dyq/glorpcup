@@ -155,7 +155,7 @@ body.lotto .wrap,body.lotto #rain{visibility:hidden}
   <div class="row">
     <label>глурп: <input type="number" id="ng" min="2" max="24" value="6"></label>
     <label style="display:flex;align-items:center;gap:7px;cursor:pointer"><input type="checkbox" id="anim" checked> глорпотрон</label>
-    <label style="display:flex;align-items:center;gap:7px;cursor:pointer" title="глорпы вылетают только когда тыкнешь в барабан"><input type="checkbox" id="manual"> вручную</label>
+    <label style="display:flex;align-items:center;gap:7px;cursor:pointer" title="глорпы вылетают только когда тыкнешь в барабан"><input type="checkbox" id="manual" checked> вручную</label>
     <button id="go" class="primary">ГЛОРПАНУТЬ 🎲</button>
     <button id="rerollAv" class="mini">перекатить глорпов глурп</button>
     <button id="copy" class="mini">скопировать</button>
@@ -395,16 +395,29 @@ function runLotto(done){
   const cv=$("#cv"),ctx=cv.getContext("2d"),W=cv.width,H=cv.height;
   const drum={x:300,y:H/2,r:265};
   const nG=groups.length;
-  const cols=nG<=4?2:(nG<=9?3:4), rows=Math.ceil(nG/cols);
+  const cols=Math.max(1,Math.min(nG,Math.ceil(Math.sqrt(nG*1.6)))), rows=Math.ceil(nG/cols);
   const zoneX=610, zoneW=W-zoneX-20, zoneH=H-30;
   const cw=zoneW/cols, ch=zoneH/rows;
+  /* размер ячейки под самую большую глурпу, чтобы никто не вылез за рамку */
+  const maxN=Math.max(1,...groups.map(g=>g.length));
+  const PAD=12, HEAD=Math.min(26,ch*.22)+14;
+  const boxW=cw-10-PAD*2, boxH=ch-10-HEAD-PAD;
+  let cell=30;
+  while(cell>7){
+    const per=Math.max(1,Math.floor(boxW/cell));
+    if(per*Math.floor(boxH/cell)>=maxN) break;
+    cell-=1;
+  }
+  const per=Math.max(1,Math.floor(boxW/cell));
+  const LR=Math.max(4,cell*.43);
+  const headFont=Math.max(9,Math.min(15,Math.floor(cw/9)));
   const order=[];             /* порядок выдачи: по кругу из групп */
   const idx=groups.map(()=>0);
   let left=groups.reduce((a,g)=>a+g.length,0);
   while(left>0) for(let gi=0;gi<nG;gi++){ if(idx[gi]<groups[gi].length){ order.push([gi,idx[gi]++]); left--; } }
 
   const manual=$("#manual").checked;
-  const R=22;
+  const R=Math.max(6,Math.min(22,drum.r*Math.sqrt(0.55/Math.max(1,order.length))));
   const balls=[];
   groups.forEach((g,gi)=>g.forEach((m,pi)=>{
     const a=Math.random()*6.283,r=Math.random()*drum.r*.6;
@@ -441,8 +454,9 @@ function runLotto(done){
   }
   function slot(gi,pi){
     const cx=zoneX+(gi%cols)*cw, cy=18+Math.floor(gi/cols)*ch;
-    const per=Math.max(1,Math.floor((cw-14)/30));
-    return {x:cx+18+(pi%per)*30, y:cy+42+Math.floor(pi/per)*30};
+    const rowsIn=Math.max(1,Math.floor(boxH/cell));
+    const i=Math.min(pi,per*rowsIn-1);
+    return {x:cx+4+PAD+cell/2+(i%per)*cell, y:cy+HEAD+cell/2+Math.floor(i/per)*cell};
   }
   function frame(now){
     const el=now-t0;
@@ -461,10 +475,10 @@ function runLotto(done){
     for(let gi=0;gi<nG;gi++){
       const cx=zoneX+(gi%cols)*cw, cy=18+Math.floor(gi/cols)*ch;
       ctx.fillStyle="#170f2bcc";
-      ctx.beginPath();ctx.roundRect(cx+4,cy,cw-10,ch-10,14);ctx.fill();
+      ctx.beginPath();ctx.roundRect(cx+4,cy,cw-10,ch-10,Math.min(14,cw/6,ch/6));ctx.fill();
       ctx.strokeStyle="#33235c";ctx.lineWidth=2;ctx.stroke();
-      ctx.fillStyle="#ffe14f";ctx.font="bold 15px 'Comic Sans MS',sans-serif";
-      ctx.fillText("глурпа "+(gi+1),cx+14,cy+24);
+      ctx.fillStyle="#ffe14f";ctx.font="bold "+headFont+"px 'Comic Sans MS',sans-serif";
+      ctx.fillText("глурпа "+(gi+1),cx+4+PAD,cy+HEAD-14+headFont*.4,cw-14-PAD*2);
     }
 
     /* физика для тех, кто ещё в барабане */
@@ -511,7 +525,7 @@ function runLotto(done){
       if(b.st===1){
         const k=Math.min(1,(now-b.t0)/b.dur), e=1-Math.pow(1-k,3);
         b.x=b.sx+(b.tx-b.sx)*e; b.y=b.sy+(b.ty-b.sy)*e-Math.sin(e*Math.PI)*90;
-        b.r=R+(13-R)*e;
+        b.r=R+(LR-R)*e;
         if(k>=1){b.st=2;b.flash=now;}
       }
     }
