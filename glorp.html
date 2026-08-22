@@ -703,6 +703,20 @@ function runLotto(done){
         ctx.fillText(b.m.p.name,b.x+b.r+4,b.y,colWIn-LR*2-10);
       }
     }
+    /* когда в барабане осталось не больше глорпов, чем глурп — подписываем ники */
+    if(mixing.length&&mixing.length<=nG){
+      const f=Math.max(10,Math.round(R*.85));
+      ctx.font="bold "+f+"px 'Comic Sans MS',sans-serif";
+      ctx.textAlign="center"; ctx.textBaseline="middle";
+      ctx.lineWidth=3; ctx.strokeStyle="#0b0716";
+      ctx.fillStyle="#ffe14f";
+      for(let i=0;i<mixing.length;i++){
+        const b=mixing[i], ty=b.y-b.r-f*.7;
+        ctx.strokeText(b.m.p.name,b.x,ty);
+        ctx.fillText(b.m.p.name,b.x,ty);
+      }
+      ctx.textAlign="left";
+    }
     ctx.textBaseline="alphabetic";
     /* осевшие и отмигавшие мячи «впекаем» в статичный слой — в кадре их больше не рисуем */
     for(let i=live.length-1;i>=0;i--){
