@@ -406,30 +406,39 @@ function runLotto(done){
   const drum={x:drumSide/2+8,y:H/2,r:Math.max(90,Math.min(drumSide/2-12,H/2-14))};
   const zoneX=drumSide+16, zoneW=W-zoneX-14, zoneH=H-24;
 
-  /* --- сетка глурп: колонки подбираем под пропорции --- */
-  let cols=1,best=1e9;
-  for(let c=1;c<=nG;c++){
-    const r=Math.ceil(nG/c), ar=(zoneW/c)/(zoneH/r);
-    const sc=Math.abs(Math.log(ar/1.7))+(c*r-nG)*.12;
-    if(sc<best){best=sc;cols=c;}
+  /* --- автобаланс: ищем раскладку с самым крупным шрифтом ников --- */
+  const PAD=8, GAP=8;
+  ctx.font="10px 'Comic Sans MS',sans-serif";
+  let nmW10=10;
+  groups.forEach(g=>g.forEach(m=>{ nmW10=Math.max(nmW10,ctx.measureText(m.p.name).width); }));
+  const fit=(f,c,ic)=>{
+    const r=Math.ceil(nG/c), rIn=Math.ceil(maxN/ic);
+    const lr=Math.min(15,f*.8), head=f*1.7+8, rowH=f*1.75;
+    const bw=PAD*2+ic*(lr*2+8+nmW10*f/10), bh=head+PAD+rIn*rowH;
+    return {rows:r,rowsIn:rIn,lr:lr,head:head,rowH:rowH,
+      colW:lr*2+8+nmW10*f/10,BW:bw,BH:bh,
+      ok:bw+GAP<=zoneW/c && bh+GAP<=zoneH/r};
+  };
+  let cols=1,inCols=1,nameFont=8,L=null;
+  for(let f=22;f>=8;f-=.5){
+    let bestC=null;
+    for(let c=1;c<=nG;c++) for(let ic=1;ic<=Math.min(6,maxN);ic++){
+      const m=fit(f,c,ic);
+      if(!m.ok) continue;
+      const waste=Math.abs(Math.log((m.BW/m.BH)/1.5))+(c*m.rows-nG)*.15+(ic*m.rowsIn-maxN)*.05;
+      if(!bestC||waste<bestC.waste) bestC={c,ic,m,waste};
+    }
+    if(bestC){ cols=bestC.c; inCols=bestC.ic; nameFont=f; L=bestC.m; break; }
   }
-  const rows=Math.ceil(nG/cols);
-  const cw=zoneW/cols, ch=zoneH/rows;
-
-  /* --- строки участников внутри глурпы: аватар + ник --- */
-  const PAD=8, HEAD=Math.max(16,Math.min(28,ch*.16))+6;
-  const boxW=cw-10-PAD*2, boxH=ch-10-HEAD-PAD;
-  let inCols=1;
-  for(let c=1;c<=6;c++){
-    inCols=c;
-    const rh=boxH/Math.ceil(maxN/c);
-    if(rh<=36&&boxW/c>=70) break;
-  }
-  const rowsIn=Math.ceil(maxN/inCols);
-  const colWIn=boxW/inCols, rowH=boxH/rowsIn;
-  const LR=Math.max(4,Math.min(14,rowH*.42,colWIn*.16));
-  const nameFont=Math.max(8,Math.min(14,Math.round(rowH*.55)));
-  const headFont=Math.max(9,Math.min(16,Math.floor(cw/9)));
+  if(!L){ L=fit(8,Math.max(1,Math.ceil(Math.sqrt(nG))),Math.min(6,maxN)); cols=Math.max(1,Math.ceil(Math.sqrt(nG))); inCols=Math.min(6,maxN); nameFont=8; }
+  const rows=L.rows, rowsIn=L.rowsIn, cw=zoneW/cols, ch=zoneH/rows;
+  /* растягиваем боксы в свободное место, чтобы не было пустоты */
+  const colWIn=Math.min((cw-GAP-PAD*2)/inCols, L.colW*1.7);
+  const rowH=Math.min((ch-GAP-L.head-PAD)/rowsIn, L.rowH*1.9);
+  const HEAD=L.head;
+  const BW=PAD*2+inCols*colWIn, BH=HEAD+PAD+rowsIn*rowH;
+  const LR=Math.max(4,L.lr);
+  const headFont=Math.max(10,Math.min(18,nameFont*1.15));
   const order=[];             /* порядок выдачи: по кругу из групп */
   const idx=groups.map(()=>0);
   let left=groups.reduce((a,g)=>a+g.length,0);
@@ -471,10 +480,12 @@ function runLotto(done){
     $("#lotto").onclick=null; cv.onclick=null; $("#lottoX").onclick=null;
     document.removeEventListener("keydown",onEsc); done();
   }
+  function box(gi){
+    return {x:zoneX+(gi%cols)*cw+(cw-BW)/2, y:12+Math.floor(gi/cols)*ch+(ch-BH)/2};
+  }
   function slot(gi,pi){
-    const cx=zoneX+(gi%cols)*cw, cy=12+Math.floor(gi/cols)*ch;
-    const i=Math.min(pi,inCols*rowsIn-1);
-    return {x:cx+4+PAD+(i%inCols)*colWIn+LR+2, y:cy+HEAD+(Math.floor(i/inCols)+.5)*rowH};
+    const b=box(gi), i=Math.min(pi,inCols*rowsIn-1);
+    return {x:b.x+PAD+(i%inCols)*colWIn+LR+2, y:b.y+HEAD+(Math.floor(i/inCols)+.5)*rowH};
   }
   function frame(now){
     const el=now-t0;
@@ -491,12 +502,12 @@ function runLotto(done){
     /* зоны глурп */
     ctx.textAlign="left";
     for(let gi=0;gi<nG;gi++){
-      const cx=zoneX+(gi%cols)*cw, cy=12+Math.floor(gi/cols)*ch;
+      const bx=box(gi);
       ctx.fillStyle="#170f2bcc";
-      ctx.beginPath();ctx.roundRect(cx+4,cy,cw-10,ch-10,Math.min(14,cw/6,ch/6));ctx.fill();
+      ctx.beginPath();ctx.roundRect(bx.x,bx.y,BW,BH,Math.min(14,BW/6,BH/6));ctx.fill();
       ctx.strokeStyle="#33235c";ctx.lineWidth=2;ctx.stroke();
       ctx.fillStyle="#ffe14f";ctx.font="bold "+headFont+"px 'Comic Sans MS',sans-serif";
-      ctx.fillText("глурпа "+(gi+1),cx+4+PAD,cy+HEAD-8,cw-14-PAD*2);
+      ctx.fillText("глурпа "+(gi+1),bx.x+PAD,bx.y+HEAD-9,BW-PAD*2);
     }
 
     /* физика для тех, кто ещё в барабане */
