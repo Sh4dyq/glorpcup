@@ -425,7 +425,7 @@ function runLotto(done){
   };
   const onEsc=e=>{ if(e.key==="Escape") skip=true; };
   document.addEventListener("keydown",onEsc);
-  let lastTxt="";
+  let lastTxt="", lastPick="";
   const say=t=>{ if(t!==lastTxt){ lastTxt=t; $("#lottoTxt").textContent=t; } };
   say(manual?"тыкни в барабан — вылетит глорп":"глорпы глорпаются…");
 
@@ -487,12 +487,13 @@ function runLotto(done){
       const b=byKey[gi+"_"+pi];
       const s=slot(gi,pi);
       b.st=1; b.sx=b.x; b.sy=b.y; b.tx=s.x; b.ty=s.y; b.t0=now; b.dur=skip?1:420;
-      say(b.m.p.name+" → глурпа "+(gi+1));
+      lastPick=b.m.p.name+" → глурпа "+(gi+1);
+      say(lastPick);
     }
     if(manual&&!skip){
       const left=order.length-issued;
       if(left>0&&balls.every(b=>b.st!==1))
-        say("тыкни в барабан · осталось "+left);
+        say(lastPick?lastPick+" · осталось "+left:"тыкни в барабан — вылетит глорп");
       else if(left===0&&balls.every(b=>b.st===2))
         say("всё · клик — к глурпам");
     }
