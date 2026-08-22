@@ -93,7 +93,7 @@ input[type=number]{width:82px}
 #lotto.on{display:flex}
 body.lotto .wrap,body.lotto #rain{visibility:hidden}
 #cv{border-radius:24px;box-shadow:0 0 80px #ff4fd844;background:#0d0819;border:4px solid var(--line);
-  max-width:96vw;max-height:74vh}
+  max-width:97vw;max-height:84vh}
 #lottoX{position:fixed;top:16px;right:20px;z-index:61;width:44px;height:44px;border-radius:50%;
   border:2px solid var(--line);background:#170f2bcc;color:#fff;font-size:22px;line-height:1;
   cursor:pointer;display:flex;align-items:center;justify-content:center}
@@ -392,25 +392,44 @@ IMGS.forEach((_,i)=>drawSprite(i));
 const sprite=i=>sprites[i]||drawSprite(i);
 
 function runLotto(done){
-  const cv=$("#cv"),ctx=cv.getContext("2d"),W=cv.width,H=cv.height;
-  const drum={x:300,y:H/2,r:265};
+  const cv=$("#cv"),ctx=cv.getContext("2d");
   const nG=groups.length;
-  const cols=Math.max(1,Math.min(nG,Math.ceil(Math.sqrt(nG*1.6)))), rows=Math.ceil(nG/cols);
-  const zoneX=610, zoneW=W-zoneX-20, zoneH=H-30;
-  const cw=zoneW/cols, ch=zoneH/rows;
-  /* размер ячейки под самую большую глурпу, чтобы никто не вылез за рамку */
   const maxN=Math.max(1,...groups.map(g=>g.length));
-  const PAD=12, HEAD=Math.min(26,ch*.22)+14;
-  const boxW=cw-10-PAD*2, boxH=ch-10-HEAD-PAD;
-  let cell=30;
-  while(cell>7){
-    const per=Math.max(1,Math.floor(boxW/cell));
-    if(per*Math.floor(boxH/cell)>=maxN) break;
-    cell-=1;
+
+  /* --- размер холста под окно --- */
+  const W=Math.round(Math.max(760,Math.min(1700,(window.innerWidth||1200)*.94)));
+  const H=Math.round(Math.max(430,Math.min(950,(window.innerHeight||800)*.76)));
+  cv.width=W; cv.height=H;
+
+  /* --- барабан слева --- */
+  const drumSide=Math.round(W*.34);
+  const drum={x:drumSide/2+8,y:H/2,r:Math.max(90,Math.min(drumSide/2-12,H/2-14))};
+  const zoneX=drumSide+16, zoneW=W-zoneX-14, zoneH=H-24;
+
+  /* --- сетка глурп: колонки подбираем под пропорции --- */
+  let cols=1,best=1e9;
+  for(let c=1;c<=nG;c++){
+    const r=Math.ceil(nG/c), ar=(zoneW/c)/(zoneH/r);
+    const sc=Math.abs(Math.log(ar/1.7))+(c*r-nG)*.12;
+    if(sc<best){best=sc;cols=c;}
   }
-  const per=Math.max(1,Math.floor(boxW/cell));
-  const LR=Math.max(4,cell*.43);
-  const headFont=Math.max(9,Math.min(15,Math.floor(cw/9)));
+  const rows=Math.ceil(nG/cols);
+  const cw=zoneW/cols, ch=zoneH/rows;
+
+  /* --- строки участников внутри глурпы: аватар + ник --- */
+  const PAD=8, HEAD=Math.max(16,Math.min(28,ch*.16))+6;
+  const boxW=cw-10-PAD*2, boxH=ch-10-HEAD-PAD;
+  let inCols=1;
+  for(let c=1;c<=6;c++){
+    inCols=c;
+    const rh=boxH/Math.ceil(maxN/c);
+    if(rh<=36&&boxW/c>=70) break;
+  }
+  const rowsIn=Math.ceil(maxN/inCols);
+  const colWIn=boxW/inCols, rowH=boxH/rowsIn;
+  const LR=Math.max(4,Math.min(14,rowH*.42,colWIn*.16));
+  const nameFont=Math.max(8,Math.min(14,Math.round(rowH*.55)));
+  const headFont=Math.max(9,Math.min(16,Math.floor(cw/9)));
   const order=[];             /* порядок выдачи: по кругу из групп */
   const idx=groups.map(()=>0);
   let left=groups.reduce((a,g)=>a+g.length,0);
@@ -453,10 +472,9 @@ function runLotto(done){
     document.removeEventListener("keydown",onEsc); done();
   }
   function slot(gi,pi){
-    const cx=zoneX+(gi%cols)*cw, cy=18+Math.floor(gi/cols)*ch;
-    const rowsIn=Math.max(1,Math.floor(boxH/cell));
-    const i=Math.min(pi,per*rowsIn-1);
-    return {x:cx+4+PAD+cell/2+(i%per)*cell, y:cy+HEAD+cell/2+Math.floor(i/per)*cell};
+    const cx=zoneX+(gi%cols)*cw, cy=12+Math.floor(gi/cols)*ch;
+    const i=Math.min(pi,inCols*rowsIn-1);
+    return {x:cx+4+PAD+(i%inCols)*colWIn+LR+2, y:cy+HEAD+(Math.floor(i/inCols)+.5)*rowH};
   }
   function frame(now){
     const el=now-t0;
@@ -473,12 +491,12 @@ function runLotto(done){
     /* зоны глурп */
     ctx.textAlign="left";
     for(let gi=0;gi<nG;gi++){
-      const cx=zoneX+(gi%cols)*cw, cy=18+Math.floor(gi/cols)*ch;
+      const cx=zoneX+(gi%cols)*cw, cy=12+Math.floor(gi/cols)*ch;
       ctx.fillStyle="#170f2bcc";
       ctx.beginPath();ctx.roundRect(cx+4,cy,cw-10,ch-10,Math.min(14,cw/6,ch/6));ctx.fill();
       ctx.strokeStyle="#33235c";ctx.lineWidth=2;ctx.stroke();
       ctx.fillStyle="#ffe14f";ctx.font="bold "+headFont+"px 'Comic Sans MS',sans-serif";
-      ctx.fillText("глурпа "+(gi+1),cx+4+PAD,cy+HEAD-14+headFont*.4,cw-14-PAD*2);
+      ctx.fillText("глурпа "+(gi+1),cx+4+PAD,cy+HEAD-8,cw-14-PAD*2);
     }
 
     /* физика для тех, кто ещё в барабане */
@@ -543,6 +561,13 @@ function runLotto(done){
       ctx.fillStyle="#fff";ctx.textAlign="center";ctx.textBaseline="middle";
       ctx.font="bold "+Math.round(b.r*.6)+"px 'Comic Sans MS',sans-serif";
       ctx.fillText(b.t,b.x+b.r*.55,b.y+b.r*.6);
+      /* ник рядом с иконкой в списке глурпы */
+      if(b.st===2){
+        ctx.textAlign="left";
+        ctx.fillStyle="#e9e2ff";
+        ctx.font=nameFont+"px 'Comic Sans MS',sans-serif";
+        ctx.fillText(b.m.p.name,b.x+b.r+4,b.y,colWIn-LR*2-10);
+      }
     }
     ctx.textBaseline="alphabetic";
 
