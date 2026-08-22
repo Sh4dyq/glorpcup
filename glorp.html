@@ -92,6 +92,8 @@ input[type=number]{width:82px}
 .p:active{cursor:grabbing}
 .p.dragging{opacity:.35}
 .g.over{border-color:var(--acc);box-shadow:0 0 0 3px #8bff5a44,0 0 26px #8bff5a33}
+.g.dup{border-color:#8bff5a;animation:dupGlow 1.6s ease-in-out infinite}
+@keyframes dupGlow{0%,100%{box-shadow:0 0 0 4px #8bff5a33,0 0 26px #8bff5a55,inset 0 0 18px #8bff5a1a}50%{box-shadow:0 0 0 5px #8bff5a4d,0 0 40px #8bff5a99,inset 0 0 28px #8bff5a2e}}
 .gname{cursor:text}
 .gname.edit{outline:2px solid var(--acc);border-radius:8px;padding:1px 5px;cursor:text}
 .gsub{color:var(--dim);font-size:12px}
@@ -344,13 +346,13 @@ let dragSrc=null;
 function renderGroups(opts){
   opts = (opts && typeof opts === "object" && !opts.nodeType) ? opts : {};
   groups.forEach(g=>g.sort((a,b)=>a.p.seed-b.p.seed));
-  const bad=conflicts(groups);
   $("#result").innerHTML='<div class="card"><h2>🏆 глурпы</h2>'+
-    (bad.length?'<div class="hint err">ГЛОРПОКОНФЛИКТ: '+esc(bad.join(", "))+'</div>':'')+
     '<div class="groups" id="gr"></div></div>';
   const gr=$("#gr");
   groups.forEach((g,i)=>{
-    const d=document.createElement("div"); d.className="g"+(opts.anim?" anim":"");
+    const seenFam={}; let dup=false;
+    g.forEach(p=>{ if(seenFam[p.fam]) dup=true; seenFam[p.fam]=1; });
+    const d=document.createElement("div"); d.className="g"+(dup?" dup":"")+(opts.anim?" anim":"");
     if(opts.anim) d.style.animationDelay=(i*80)+"ms";
     const head=document.createElement("div"); head.className="ghead";
     const gav=document.createElement("img"); gav.className="gav"; gav.src=IMGS[avatars[i].av].d;
