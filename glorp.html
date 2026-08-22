@@ -73,8 +73,8 @@ input[type=number]{width:82px}
 .x{color:var(--dim);cursor:pointer;padding:0 4px}
 .x:hover{color:var(--bad)}
 .groups{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:16px}
-.g{background:linear-gradient(180deg,#20143c,#140c26);border:3px solid var(--line);border-radius:20px;padding:14px;
-  animation:pop .5s backwards}
+.g{background:linear-gradient(180deg,#20143c,#140c26);border:3px solid var(--line);border-radius:20px;padding:14px}
+.g.anim{animation:pop .5s backwards}
 .g:nth-child(odd){transform:rotate(-.7deg)}
 .g:nth-child(even){transform:rotate(.7deg)}
 @keyframes pop{from{opacity:0;transform:translateY(20px) scale(.9) rotate(6deg)}}
@@ -341,7 +341,8 @@ function conflicts(gs){
 }
 function gTitle(i){ return avatars[i].title||gName(avatars[i].av); }
 let dragSrc=null;
-function renderGroups(keepScroll){
+function renderGroups(opts){
+  opts = (opts && typeof opts === "object" && !opts.nodeType) ? opts : {};
   groups.forEach(g=>g.sort((a,b)=>a.p.seed-b.p.seed));
   const bad=conflicts(groups);
   $("#result").innerHTML='<div class="card"><h2>🏆 глурпы</h2>'+
@@ -349,7 +350,8 @@ function renderGroups(keepScroll){
     '<div class="groups" id="gr"></div></div>';
   const gr=$("#gr");
   groups.forEach((g,i)=>{
-    const d=document.createElement("div"); d.className="g"; d.style.animationDelay=(i*80)+"ms";
+    const d=document.createElement("div"); d.className="g"+(opts.anim?" anim":"");
+    if(opts.anim) d.style.animationDelay=(i*80)+"ms";
     const head=document.createElement("div"); head.className="ghead";
     const gav=document.createElement("img"); gav.className="gav"; gav.src=IMGS[avatars[i].av].d;
     gav.title="выбрать глорпа глурпы";
@@ -395,11 +397,11 @@ function renderGroups(keepScroll){
       if(!dragSrc||dragSrc.gi===i) return;
       const m=groups[dragSrc.gi].splice(dragSrc.pi,1)[0];
       groups[i].push(m); dragSrc=null;
-      renderGroups(true);
+      renderGroups();
     };
     gr.appendChild(d);
   });
-  if(!keepScroll) $("#result").scrollIntoView({behavior:"smooth",block:"start"});
+  if(opts.scroll) $("#result").scrollIntoView({behavior:"smooth",block:"start"});
 }
 
 /* ---- глорпотрон ---- */
@@ -753,7 +755,8 @@ $("#go").onclick=()=>{
   const g=makeGroups();
   if(!g){alert("глурп меньше, чем миниглорпов у одного глорптора — добавь глурп");return;}
   groups=g; pickAvatars(g.length);
-  $("#anim").checked?runLotto(renderGroups):renderGroups();
+  const show=()=>renderGroups({anim:true,scroll:true});
+  $("#anim").checked?runLotto(show):show();
 };
 $("#copy").onclick=()=>{
   if(!groups)return;
