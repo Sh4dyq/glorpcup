@@ -61,10 +61,15 @@ input[type=number]{width:82px}
   border-radius:50%;background:#2a1b4d;border:2px solid var(--line);color:var(--acc);-moz-appearance:textfield}
 .seedin::-webkit-outer-spin-button,.seedin::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 .seedin:focus{border-color:var(--acc);background:#0f0a1d}
-.mvsel{width:22px;min-width:22px;flex:none;padding:0;text-align:center;background:transparent;border:2px solid transparent;
-  color:var(--dim);font-size:12px;opacity:.35;cursor:pointer;transition:opacity .15s,color .15s}
-.stu:hover .mvsel{opacity:.85}
-.mvsel:hover,.mvsel:focus{opacity:1;color:var(--acc)}
+.mvsel{-webkit-appearance:none;appearance:none;width:24px;height:24px;min-width:24px;flex:0 0 24px;
+  padding:0;text-align:center;text-align-last:center;line-height:20px;border-radius:50%;
+  background:#2a1b4d;border:2px solid var(--line);color:var(--dim);font:inherit;font-size:12px;
+  opacity:.45;cursor:pointer;color-scheme:dark;transition:opacity .15s,color .15s,border-color .15s}
+.mvsel::-ms-expand{display:none}
+.stu:hover .mvsel{opacity:.9}
+.mvsel:hover,.mvsel:focus{opacity:1;color:var(--acc);border-color:var(--acc);outline:none}
+.mvsel option{background:#1d1235;color:var(--txt)}
+.mvsel option:checked{background:#3a2166;color:var(--acc)}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(265px,1fr));gap:12px}
 .fam{background:#1d1235;border:2px solid var(--line);border-radius:16px;padding:10px}
 .mtitle{display:flex;align-items:center;gap:9px;margin-bottom:7px}
@@ -510,10 +515,33 @@ function runLotto(done){
   while(left>0) for(let gi=0;gi<nG;gi++){ if(idx[gi]<groups[gi].length){ order.push([gi,idx[gi]++]); left--; } }
 
   const manual=$("#manual").checked;
-  const R=Math.max(6,Math.min(22,drum.r*Math.sqrt(0.55/Math.max(1,order.length))));
+  /* центральный глорп: крутится вместе с барабаном, меняется при каждой выдаче */
+  const CR=Math.round(drum.r*.26);
+  let coreIdx=rnd(IMGS.length);
+  /* центральный глорп крупнее 64px-спрайта — рендерим свой круглый кадр и кэшируем */
+  const coreCache=new Map(), coreSz=Math.max(64,CR*2);
+  function coreSpr(i){
+    let c=coreCache.get(i); if(c) return c;
+    const im0=preload[i];
+    if(!(im0&&im0.complete&&im0.naturalWidth))      /* ещё не загрузилось — 64px спрайт, без аллокаций в кадре */
+      return sprite(i);
+    c=document.createElement("canvas"); c.width=c.height=coreSz;
+    const x=c.getContext("2d");
+    x.save(); x.beginPath(); x.arc(coreSz/2,coreSz/2,coreSz/2,0,6.283); x.clip();
+    x.fillStyle="#1b1033"; x.fillRect(0,0,coreSz,coreSz);
+    const im=im0;
+    const sc=Math.min(coreSz/im.naturalWidth,coreSz/im.naturalHeight)*.99;
+    const w=im.naturalWidth*sc,h=im.naturalHeight*sc;
+    x.drawImage(im,(coreSz-w)/2,(coreSz-h)/2,w,h);
+    x.restore();
+    coreCache.set(i,c);
+    return c;
+  }
+  /* мячи чуть мельче: меньше давки/дребезга и есть зазор до центрального глорпа */
+  const R=Math.max(6,Math.min(22,Math.sqrt(Math.max(1,drum.r*drum.r-CR*CR))*Math.sqrt(0.42/Math.max(1,order.length))));
   const balls=[];
   groups.forEach((g,gi)=>g.forEach((m,pi)=>{
-    const a=Math.random()*6.283,r=Math.random()*drum.r*.6;
+    const a=Math.random()*6.283,rMin=CR+R+2,r=rMin+Math.random()*Math.max(0,drum.r-R-4-rMin);
     balls.push({gi,pi,m,x:drum.x+Math.cos(a)*r,y:drum.y+Math.sin(a)*r,
       vx:(Math.random()-.5)*11,vy:(Math.random()-.5)*11,r:R,
       c:fams[m.fam].color,t:String(m.p.seed),av:m.p.av,st:0});
@@ -606,7 +634,10 @@ function runLotto(done){
     /* барабан */
     ctx.save();ctx.translate(drum.x,drum.y);ctx.rotate(spin);
     ctx.drawImage(drum2,-dr,-dr);
+    ctx.drawImage(coreSpr(coreIdx),-CR,-CR,CR*2,CR*2);
     ctx.restore();
+    ctx.beginPath();ctx.arc(drum.x,drum.y,CR,0,6.283);
+    ctx.strokeStyle="#ffe14f88";ctx.lineWidth=3;ctx.stroke();
     ctx.beginPath();ctx.arc(drum.x,drum.y,drum.r,0,6.283);
     ctx.strokeStyle="#8bff5a55";ctx.lineWidth=6;ctx.stroke();
 
@@ -617,7 +648,12 @@ function runLotto(done){
     for(const b of mixing){
       b.vy+=.4*h; b.vx+=sw*.35*h; b.x+=b.vx*h; b.y+=b.vy*h;
       const dx=b.x-drum.x,dy=b.y-drum.y,d=Math.hypot(dx,dy)||1;
-      if(d>drum.r-b.r){
+      if(d<CR+b.r){
+        const nx=dx/d,ny=dy/d,dot=b.vx*nx+b.vy*ny;
+        if(dot<0){b.vx-=2*dot*nx;b.vy-=2*dot*ny;b.vx*=damp;b.vy*=damp;}
+        b.x=drum.x+nx*(CR+b.r);b.y=drum.y+ny*(CR+b.r);
+      }
+      else if(d>drum.r-b.r){
         const nx=dx/d,ny=dy/d,dot=b.vx*nx+b.vy*ny;
         b.vx-=2*dot*nx;b.vy-=2*dot*ny;b.vx*=damp;b.vy*=damp;
         b.x=drum.x+nx*(drum.r-b.r);b.y=drum.y+ny*(drum.r-b.r);
@@ -658,6 +694,7 @@ function runLotto(done){
     else if(el>MIX) want=Math.min(order.length,Math.floor((el-MIX)/STEP)+1);
     while(issued<want){
       const [gi,pi]=order[issued++];
+      if(IMGS.length>1){ let ni=rnd(IMGS.length-1); if(ni>=coreIdx) ni++; coreIdx=ni; }
       const b=byKey[gi+"_"+pi];
       const s=slot(gi,pi);
       b.st=1; b.sx=b.x; b.sy=b.y; b.tx=s.x; b.ty=s.y; b.t0=now; b.dur=skip?1:420;
