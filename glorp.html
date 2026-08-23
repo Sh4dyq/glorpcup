@@ -118,6 +118,11 @@ body.lotto .wrap,body.lotto #rain{display:none}
   cursor:pointer;display:flex;align-items:center;justify-content:center}
 #lottoX:hover{border-color:var(--acc);color:var(--acc)}
 .lotto-txt{letter-spacing:4px;color:var(--acc);font-size:15px;text-transform:uppercase}
+#coreImg{display:none;position:fixed;z-index:62;border-radius:50%;object-fit:contain;
+  background:#1b1033;pointer-events:none;will-change:transform;
+  animation:coreSpin 1.885s linear infinite}
+#coreImg.on{display:block}
+@keyframes coreSpin{to{transform:rotate(360deg)}}
 /* поповер выбора глорпа */
 #pop{display:none;position:absolute;z-index:80;width:min(430px,92vw);
   background:linear-gradient(180deg,#221545,#150d29);border:3px solid var(--acc);border-radius:20px;padding:12px;
@@ -185,7 +190,7 @@ body.lotto .wrap,body.lotto #rain{display:none}
 <div id="result"></div>
 </div>
 
-<div id="lotto"><button id="lottoX" type="button" title="отменить шафл (Esc)">✕</button><canvas id="cv" width="1040" height="600"></canvas><div class="lotto-txt" id="lottoTxt">глорпы глорпаются…</div></div>
+<div id="lotto"><button id="lottoX" type="button" title="отменить шафл (Esc)">✕</button><canvas id="cv" width="1040" height="600"></canvas><img id="coreImg" alt=""><div class="lotto-txt" id="lottoTxt">глорпы глорпаются…</div></div>
 
 <div id="pop"><input id="popq" placeholder="искать глорпа…"><div class="poprow"><small>клик по картинке — выбрать · по названию — переименовать</small><button class="mini" id="resetNames">сброс имён</button></div><div class="pgrid" id="pgrid"></div></div>
 
@@ -518,6 +523,23 @@ function runLotto(done){
   /* центральный глорп: крутится вместе с барабаном, меняется при каждой выдаче */
   const CR=Math.round(drum.r*.26);
   let coreIdx=rnd(IMGS.length);
+  /* анимированные (gif/webp) на канвасе не двигаются — показываем настоящий <img> поверх */
+  const coreEl=$("#coreImg");
+  const coreAnim=i=>!!IMGS[i].a;
+  function placeCore(){
+    if(!coreAnim(coreIdx)){ coreEl.classList.remove("on"); return; }
+    const rc=cv.getBoundingClientRect();
+    const k=rc.width/W, d=CR*2*k;
+    coreEl.style.width=coreEl.style.height=d+"px";
+    coreEl.style.left=(rc.left+drum.x*k-d/2)+"px";
+    coreEl.style.top=(rc.top+drum.y*k-d/2)+"px";
+    coreEl.classList.add("on");
+  }
+  function setCore(i){
+    coreIdx=i;
+    if(coreAnim(i)){ if(coreEl.src!==IMGS[i].d) coreEl.src=IMGS[i].d; placeCore(); }
+    else coreEl.classList.remove("on");
+  }
   /* центральный глорп крупнее 64px-спрайта — рендерим свой круглый кадр и кэшируем */
   const coreCache=new Map(), coreSz=Math.max(64,CR*2);
   function coreSpr(i){
@@ -549,6 +571,8 @@ function runLotto(done){
   const byKey={}; balls.forEach(b=>byKey[b.gi+"_"+b.pi]=b);
 
   $("#lotto").classList.add("on"); document.body.classList.add("lotto");
+  setCore(coreIdx);
+  window.addEventListener("resize",placeCore);
   const MIX=4200, STEP=95;
   let t0=performance.now(), issued=0, skip=false, fin=0, pull=false, closeNow=false, abort=false;
   cv.onclick=ev=>{
@@ -594,6 +618,8 @@ function runLotto(done){
 
   function close(){
     $("#lotto").classList.remove("on"); document.body.classList.remove("lotto");
+    coreEl.classList.remove("on"); coreEl.removeAttribute("src");
+    window.removeEventListener("resize",placeCore);
     $("#lotto").onclick=null; cv.onclick=null; $("#lottoX").onclick=null;
     document.removeEventListener("keydown",onEsc); done();
   }
@@ -634,7 +660,7 @@ function runLotto(done){
     /* барабан */
     ctx.save();ctx.translate(drum.x,drum.y);ctx.rotate(spin);
     ctx.drawImage(drum2,-dr,-dr);
-    ctx.drawImage(coreSpr(coreIdx),-CR,-CR,CR*2,CR*2);
+    if(!coreAnim(coreIdx)) ctx.drawImage(coreSpr(coreIdx),-CR,-CR,CR*2,CR*2);
     ctx.restore();
     ctx.beginPath();ctx.arc(drum.x,drum.y,CR,0,6.283);
     ctx.strokeStyle="#ffe14f88";ctx.lineWidth=3;ctx.stroke();
@@ -694,7 +720,7 @@ function runLotto(done){
     else if(el>MIX) want=Math.min(order.length,Math.floor((el-MIX)/STEP)+1);
     while(issued<want){
       const [gi,pi]=order[issued++];
-      if(IMGS.length>1){ let ni=rnd(IMGS.length-1); if(ni>=coreIdx) ni++; coreIdx=ni; }
+      if(IMGS.length>1){ let ni=rnd(IMGS.length-1); if(ni>=coreIdx) ni++; setCore(ni); }
       const b=byKey[gi+"_"+pi];
       const s=slot(gi,pi);
       b.st=1; b.sx=b.x; b.sy=b.y; b.tx=s.x; b.ty=s.y; b.t0=now; b.dur=skip?1:420;
