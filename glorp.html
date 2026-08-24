@@ -232,7 +232,7 @@ function nextAv(){ if(!pool.length) pool=shuffle(IMGS.map((_,i)=>i)); return poo
     r.appendChild(im);
   }
   $("#hero").src=IMGS[rnd(IMGS.length)].d;
-  
+  $("#hero").onclick=e=>e.target.src=IMGS[rnd(IMGS.length)].d;
 })();
 
 /* ---- данные ---- */
