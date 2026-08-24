@@ -517,7 +517,13 @@ function runLotto(done){
   const order=[];             /* порядок выдачи: по кругу из групп */
   const idx=groups.map(()=>0);
   let left=groups.reduce((a,g)=>a+g.length,0);
-  while(left>0) for(let gi=0;gi<nG;gi++){ if(idx[gi]<groups[gi].length){ order.push([gi,idx[gi]++]); left--; } }
+  /* каждый ряд (по одному глорпу в каждую глурпу) выдаём в случайном порядке */
+  while(left>0){
+    const av=[];
+    for(let gi=0;gi<nG;gi++) if(idx[gi]<groups[gi].length) av.push(gi);
+    shuffle(av);
+    for(const gi of av){ order.push([gi,idx[gi]++]); left--; }
+  }
 
   const manual=$("#manual").checked;
   /* центральный глорп: крутится вместе с барабаном, меняется при каждой выдаче */
@@ -573,7 +579,8 @@ function runLotto(done){
   $("#lotto").classList.add("on"); document.body.classList.add("lotto");
   setCore(coreIdx);
   window.addEventListener("resize",placeCore);
-  const MIX=4200, STEP=95;
+  /* пауза между выдачами: с закруткой полёт длиннее, но общий тайминг держим в рамках */
+  const MIX=4200, STEP=Math.max(95,Math.min(260,Math.round(11000/Math.max(1,order.length))));
   let t0=performance.now(), issued=0, skip=false, fin=0, pull=false, closeNow=false, abort=false;
   cv.onclick=ev=>{
     if(!manual){ skip=true; return; }
@@ -606,6 +613,70 @@ function runLotto(done){
   {const q=drum2.getContext("2d"); q.translate(dr,dr);
    q.strokeStyle="#2c1c52"; q.lineWidth=4;
    for(let i=0;i<10;i++){q.beginPath();q.moveTo(0,0);q.lineTo(Math.cos(i*.628)*drum.r,Math.sin(i*.628)*drum.r);q.stroke();}}
+  /* --- спецэффекты --- */
+  const FLY=1150;                      /* полёт по спирали до глурпы */
+  const FLASH=620;                     /* сколько живёт вспышка приземления */
+  const parts=[];                      /* частицы: искры, эмодзи, кольца, надписи */
+  const EMO=["✨","🌟","💥","🌀","🔥","💨","🍬","⭐","🤪","👽"];
+  const BOOM=["БАМ!","ГЛОРП!","ПЛЮХ!","ВЖУХ!","ШЛЁП!","ТЫЩ!","ХЛОП!","ОПА!","БУМ!","ЦОП!"];
+  const PMAX=420;
+  function spark(x,y,c,n,pow){
+    if(parts.length>PMAX) n=Math.max(2,n>>2);
+    for(let i=0;i<n;i++){
+      const a=Math.random()*6.283, sp=(.6+Math.random()*1.8)*(pow||1);
+      parts.push({k:0,x:x,y:y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,g:.055,
+        r:1.2+Math.random()*2.6,c:c,life:0,max:340+Math.random()*380});
+    }
+  }
+  function emoji(x,y,n,sz){
+    if(parts.length>PMAX) return;
+    for(let i=0;i<n;i++){
+      const a=-Math.PI/2+(Math.random()-.5)*2.6, sp=.9+Math.random()*2.2;
+      parts.push({k:1,x:x,y:y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,g:.045,
+        s:sz*(.7+Math.random()*.7),rot:Math.random()*6.283,vr:(Math.random()-.5)*.25,
+        e:EMO[rnd(EMO.length)],life:0,max:600+Math.random()*500});
+    }
+  }
+  function ring(x,y,c,r0,r1,ms,w){ parts.push({k:2,x:x,y:y,c:c,r0:r0,r1:r1,w:w||3,life:0,max:ms}); }
+  function boom(x,y,c,f){
+    parts.push({k:3,x:x,y:y,c:c,f:f||22,txt:BOOM[rnd(BOOM.length)],life:0,max:750,
+      vy:-.5,rot:(Math.random()-.5)*.5});
+  }
+  function stepParts(dt){
+    for(let i=parts.length-1;i>=0;i--){
+      const p=parts[i];
+      p.life+=dt;
+      if(p.life>=p.max){ parts.splice(i,1); continue; }
+      const h=dt/16.67;
+      if(p.k===0||p.k===1){ p.vy+=p.g*h; p.x+=p.vx*h; p.y+=p.vy*h; if(p.k===1) p.rot+=p.vr*h; }
+      else if(p.k===3){ p.y+=p.vy*h; p.vy*=Math.pow(.965,h); }
+    }
+  }
+  function drawParts(){
+    for(const p of parts){
+      const t=p.life/p.max, al=1-t*t;
+      if(p.k===0){
+        ctx.globalAlpha=al; ctx.fillStyle=p.c;
+        ctx.beginPath(); ctx.arc(p.x,p.y,p.r*(1-t*.6),0,6.283); ctx.fill();
+      }else if(p.k===1){
+        ctx.globalAlpha=al; ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.rot);
+        ctx.font=Math.round(p.s)+"px sans-serif"; ctx.textAlign="center"; ctx.textBaseline="middle";
+        ctx.fillText(p.e,0,0); ctx.restore();
+      }else if(p.k===2){
+        const ee=1-Math.pow(1-t,2);
+        ctx.globalAlpha=al*.9; ctx.strokeStyle=p.c; ctx.lineWidth=Math.max(.5,p.w*(1-t*.7));
+        ctx.beginPath(); ctx.arc(p.x,p.y,p.r0+(p.r1-p.r0)*ee,0,6.283); ctx.stroke();
+      }else{
+        const sc=t<.18?(.4+(t/.18)*.75):(1.15-(t-.18)*.15);
+        ctx.globalAlpha=al; ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.rot); ctx.scale(sc,sc);
+        ctx.font="bold "+p.f+"px 'Comic Sans MS',sans-serif"; ctx.textAlign="center"; ctx.textBaseline="middle";
+        ctx.lineWidth=5; ctx.strokeStyle="#0b0716"; ctx.strokeText(p.txt,0,0);
+        ctx.fillStyle=p.c||"#ffe14f"; ctx.fillText(p.txt,0,0); ctx.restore();
+      }
+    }
+    ctx.globalAlpha=1; ctx.textAlign="left"; ctx.textBaseline="alphabetic";
+  }
+
   const mixing=balls.slice();          /* мячи, которые ещё крутятся */
   const live=balls.slice();            /* что рисуем в кадре (осевшие «впекаются» в bg) */
   let flying=0, landed=0;              /* st===1 / st===2 — вместо every() каждый кадр */
@@ -723,7 +794,13 @@ function runLotto(done){
       if(IMGS.length>1){ let ni=rnd(IMGS.length-1); if(ni>=coreIdx) ni++; setCore(ni); }
       const b=byKey[gi+"_"+pi];
       const s=slot(gi,pi);
-      b.st=1; b.sx=b.x; b.sy=b.y; b.tx=s.x; b.ty=s.y; b.t0=now; b.dur=skip?1:420;
+      b.st=1; b.sx=b.x; b.sy=b.y; b.tx=s.x; b.ty=s.y; b.t0=now; b.dur=skip?1:FLY;
+      b.spin0=Math.random()*6.283;
+      b.turns=(2+Math.floor(Math.random()*3))*(Math.random()<.5?-1:1);
+      b.amp=Math.min(150,Math.max(50,Math.hypot(b.tx-b.sx,b.ty-b.sy)*.28));
+      b.rot=0; b.vrot=(Math.random()<.5?-1:1)*(.22+Math.random()*.16);
+      b.trail=0;
+      if(!skip){ ring(b.x,b.y,b.c,b.r,b.r+46,420,4); spark(b.x,b.y,b.c,10,1.4); emoji(b.x,b.y,2,R*1.5); }
       const mi=mixing.indexOf(b); if(mi>=0) mixing.splice(mi,1);
       flying++;
       lastPick=b.m.p.name+" → глурпа "+(gi+1);
@@ -739,19 +816,45 @@ function runLotto(done){
     for(const b of live){
       if(b.st===1){
         const k=Math.min(1,(now-b.t0)/b.dur), e=1-Math.pow(1-k,3);
-        b.x=b.sx+(b.tx-b.sx)*e; b.y=b.sy+(b.ty-b.sy)*e-Math.sin(e*Math.PI)*90;
+        const bx=b.sx+(b.tx-b.sx)*e, by=b.sy+(b.ty-b.sy)*e-Math.sin(e*Math.PI)*90;
+        /* закрутка: радиус вырастает и схлопывается к цели */
+        const amp=b.amp*Math.sin(Math.min(1,k*1.05)*Math.PI)*(1-k*.25);
+        const ang=b.spin0+k*b.turns*6.283;
+        b.x=bx+Math.cos(ang)*amp; b.y=by+Math.sin(ang)*amp*.62;
         b.r=R+(LR-R)*e;
-        if(k>=1){b.st=2;b.flash=now;flying--;landed++;}
+        b.rot+=b.vrot*(dt/16.67);
+        /* шлейф — не чаще ~30 Гц на мяч */
+        if(!skip&&now-b.trail>32&&parts.length<260){
+          b.trail=now;
+          parts.push({k:0,x:b.x,y:b.y,vx:(Math.random()-.5)*.5,vy:(Math.random()-.5)*.5,g:.01,
+            r:b.r*.32,c:b.c,life:0,max:300});
+          if(Math.random()<.22) emoji(b.x,b.y,1,b.r*1.2);
+        }
+        if(k>=1){
+          b.st=2;b.flash=now;flying--;landed++;b.rot=0;
+          if(!skip){
+            spark(b.x,b.y,b.c,18,1.6);
+            spark(b.x,b.y,"#ffe14f",10,2.1);
+            emoji(b.x,b.y,4,Math.max(12,LR*1.6));
+            ring(b.x,b.y,"#ffe14f",b.r*.6,b.r+34,FLASH,4);
+            ring(b.x,b.y,b.c,b.r*.4,b.r+22,FLASH*.7,3);
+            boom(b.x,b.y-b.r-6,b.c,Math.max(14,Math.round(LR*1.6)));
+          }
+        }
       }
     }
     /* рисуем */
     for(const b of live){
       const sz=Math.round(b.r*2);
-      ctx.drawImage(sprite(b.av),b.x-b.r,b.y-b.r,sz,sz);
+      if(b.st===1&&b.rot){
+        ctx.save();ctx.translate(b.x,b.y);ctx.rotate(b.rot);
+        ctx.drawImage(sprite(b.av),-b.r,-b.r,sz,sz);ctx.restore();
+      }else ctx.drawImage(sprite(b.av),b.x-b.r,b.y-b.r,sz,sz);
       ctx.beginPath();ctx.arc(b.x,b.y,b.r,0,6.283);ctx.strokeStyle=b.c;ctx.lineWidth=b.st===2?2:3;ctx.stroke();
-      if(b.st===2&&now-b.flash<260){
-        ctx.beginPath();ctx.arc(b.x,b.y,b.r+(now-b.flash)/6,0,6.283);
-        ctx.strokeStyle="rgba(255,225,79,"+(1-(now-b.flash)/260)+")";ctx.lineWidth=3;ctx.stroke();
+      if(b.st===2&&now-b.flash<FLASH){
+        const q=(now-b.flash)/FLASH;
+        ctx.beginPath();ctx.arc(b.x,b.y,b.r+q*b.r*2.2,0,6.283);
+        ctx.strokeStyle="rgba(255,225,79,"+(1-q)+")";ctx.lineWidth=3;ctx.stroke();
       }
       ctx.beginPath();ctx.arc(b.x+b.r*.55,b.y+b.r*.6,b.r*.42,0,6.283);
       ctx.fillStyle="#0b0716dd";ctx.fill();
@@ -781,17 +884,19 @@ function runLotto(done){
       ctx.textAlign="left";
     }
     ctx.textBaseline="alphabetic";
+    stepParts(skip?dt*6:dt);
+    drawParts();
     /* осевшие и отмигавшие мячи «впекаем» в статичный слой — в кадре их больше не рисуем */
     for(let i=live.length-1;i>=0;i--){
       const b=live[i];
-      if(b.st!==2||now-b.flash<260) continue;
+      if(b.st!==2||now-b.flash<FLASH) continue;
       bake(b); live.splice(i,1);
     }
 
     if(abort){ close(); return; }
     const allDone=landed===balls.length;
     if(allDone&&!fin) fin=now;
-    const wait=skip?200:(manual?20000:900);
+    const wait=skip?200:(manual?20000:1500);
     if(fin&&(now-fin>wait||closeNow)){ close(); return; }
     requestAnimationFrame(frame);
   }
