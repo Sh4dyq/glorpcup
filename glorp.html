@@ -94,12 +94,15 @@ input[type=number]{width:82px}
   transition:.15s;background:#150d29;padding:3px}
 .gav:hover{transform:scale(1.12) rotate(-6deg);box-shadow:0 0 22px #8bff5a88}
 @keyframes glorpWob{0%{transform:translateY(0) rotate(-1.1deg)}50%{transform:translateY(-2px) rotate(1.1deg)}100%{transform:translateY(0) rotate(-1.1deg)}}
-.av-m,.av-s,.gav{animation:glorpWob 3.6s ease-in-out infinite}
+.av-m,.av-s,.gav,.av-p{animation:glorpWob 3.6s ease-in-out infinite}
+.g .p:nth-child(2n) .av-p{animation-duration:4.3s;animation-delay:-.9s}
+.g .p:nth-child(3n) .av-p{animation-duration:3.1s;animation-delay:-1.7s}
+.g .p:nth-child(5n) .av-p{animation-duration:4.8s;animation-delay:-2.4s}
 .av-m:nth-child(2n),.av-s:nth-child(2n),.gav:nth-child(2n){animation-duration:4.3s;animation-delay:-.9s}
 .av-m:nth-child(3n),.av-s:nth-child(3n),.gav:nth-child(3n){animation-duration:3.1s;animation-delay:-1.7s}
 .av-m:nth-child(5n),.av-s:nth-child(5n),.gav:nth-child(5n){animation-duration:4.8s;animation-delay:-2.4s}
-.av-m:hover,.av-s:hover,.gav:hover{animation:none}
-@media (prefers-reduced-motion:reduce){.av-m,.av-s,.gav{animation:none}}
+.av-m:hover,.av-s:hover,.gav:hover,.av-p:hover{animation:none}
+@media (prefers-reduced-motion:reduce){.av-m,.av-s,.gav,.av-p{animation:none}}
 .gname{font-size:18px;font-weight:700;color:var(--acc);line-height:1.15;word-break:break-word}
 .gsub{color:var(--dim);font-size:12px}
 .p{display:flex;align-items:center;gap:8px;padding:4px 7px;border-radius:12px;background:#150d29;margin-bottom:5px}
@@ -190,7 +193,7 @@ body.lotto .wrap,body.lotto #rain{display:none}
     <label style="display:flex;align-items:center;gap:7px;cursor:pointer"><input type="checkbox" id="anim" checked> глорпотрон</label>
     <label style="display:flex;align-items:center;gap:7px;cursor:pointer" title="глорпы вылетают только когда тыкнешь в барабан"><input type="checkbox" id="manual" checked> вручную</label>
     <button id="go" class="primary">ГЛОРПАНУТЬ 🎲</button>
-    <button id="rerollAv" class="mini">перекатить глорпов глурп</button>
+    <button id="rerollAv" class="mini">переглорпировать глорпов глурп</button>
     <button id="copy" class="mini">скопировать</button>
   </div>
   <div class="hint" id="feas"></div>
@@ -1019,6 +1022,7 @@ $("#rerollAv").onclick=()=>{ if(!groups)return; pickAvatars(groups.length); rend
 $("#go").onclick=()=>{
   const g=makeGroups();
   if(!g){alert("глурп меньше, чем миниглорпов у одного глорптора — добавь глурп");return;}
+  pool=[]; fams.forEach(f=>{f.mentor.av=nextAv();f.students.forEach(s=>s.av=nextAv());}); render();
   groups=g; pickAvatars(g.length);
   const show=()=>renderGroups({anim:true,scroll:true});
   $("#anim").checked?runLotto(show):show();
