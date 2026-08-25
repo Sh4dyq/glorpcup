@@ -579,13 +579,23 @@ function runLotto(done){
     return c;
   }
   /* мячи чуть мельче: меньше давки/дребезга и есть зазор до центрального глорпа */
-  const R=Math.max(6,Math.min(22,Math.sqrt(Math.max(1,drum.r*drum.r-CR*CR))*Math.sqrt(0.38/Math.max(1,order.length))));
+  const R=Math.max(6,Math.min(22,Math.sqrt(Math.max(1,drum.r*drum.r-CR*CR))*Math.sqrt(0.28/Math.max(1,order.length))));
   const GAPB=Math.max(1,R*.14), GAPC=Math.max(1.5,R*.20);
   const VMAX=Math.max(8,R*1.1), VMAX2=VMAX*VMAX;
-  /* стенка барабана крутится вместе с ним и подтаскивает мячи вверх по восходящей
-     стороне; проскальзывание сильное, иначе всё «примагничивается» к ободу */
   const SPIN=1/205;   /* рад/мс: угол колеса считаем от общего времени, а не копим по dt */
-  const WALLV=SPIN*(1000/60)*drum.r, WFR=.22;
+  const GRAV=.52;     /* px за шаг 1/60 c */
+  /* Стенка крутится и тащит мяч за собой, но только там, где мяч на неё ДАВИТ
+     (нижняя часть барабана). Наверху мяча к ободу ничто не прижимает, тяги нет —
+     иначе мячи размазывались бы кольцом по всей окружности вместо кучи внизу. */
+  /* Скорость стенки для трения ограничена ПОДкритической: если тащить мяч быстрее
+     sqrt(g·r), центробежной силы хватает, чтобы он висел на ободе и наверху — и вся
+     масса размазывается кольцом вместо кучи внизу. Колесо при этом крутится быстро,
+     это только предел того, что стенка успевает передать мячу. */
+  const VCRIT=Math.sqrt(GRAV*drum.r);
+  const WALLV=Math.min(SPIN*(1000/60)*drum.r, VCRIT*.8), WFR=.24;
+  const REST=.72;     /* упругость удара о стенку */
+  const VSTOP=1.2;    /* медленный контакт гасим вместо отскока — мяч ложится, а не дребезжит */
+  const KICKMIN=1.5;  /* случайный разброс только на реальном ударе, не на лежащем мяче */
   const balls=[];
   groups.forEach((g,gi)=>g.forEach((m,pi)=>{
     const a=Math.random()*6.283,rMin=CR+R+GAPC+2,r=rMin+Math.random()*Math.max(0,drum.r-R-GAPC-4-rMin);
@@ -701,7 +711,7 @@ function runLotto(done){
   const live=balls.slice();            /* что рисуем в кадре (осевшие «впекаются» в bg) */
   let flying=0, landed=0;              /* st===1 / st===2 — вместо every() каждый кадр */
   const cell=new Map(), inv=1/(R*2.2), NB=[[0,0],[1,0],[-1,1],[0,1],[1,1]];
-  const ITER=balls.length>260?1:2;   /* проходов расталкивания за подшаг */
+  const ITER=balls.length>200?3:5;   /* проходов расталкивания за подшаг */
   let prev=t0, spin=0;
   const SUB=1000/60;      /* макс. длина физического подшага */
   let lastTxt="", lastPick="";
@@ -761,27 +771,33 @@ function runLotto(done){
 
     /* физика: фикс. шаг 60 Гц, не зависит от частоты монитора */
     const sw=Math.sin(el/95)*1.5;
-    const damp=Math.pow(.93,h);
     for(let st=0;st<sub;st++){
     for(const b of mixing){
-      b.vy+=.52*h; b.vx+=sw*.35*h;
+      b.vy+=GRAV*h; b.vx+=sw*.35*h;
       {const sp2=b.vx*b.vx+b.vy*b.vy;
        if(sp2>VMAX2){const k=VMAX/Math.sqrt(sp2); b.vx*=k; b.vy*=k;}}
       b.x+=b.vx*h; b.y+=b.vy*h;
       const dx=b.x-drum.x,dy=b.y-drum.y,d=Math.hypot(dx,dy)||1;
       if(d<CR+b.r+GAPC){
         const nx=dx/d,ny=dy/d,dot=b.vx*nx+b.vy*ny;
-        if(dot<0){b.vx-=2*dot*nx;b.vy-=2*dot*ny;b.vx*=damp;b.vy*=damp;}
+        if(dot<0){
+          const k=(-dot<VSTOP)?1:1+REST;   /* тихо подошёл — прилип, ударил — отскочил */
+          b.vx-=k*dot*nx; b.vy-=k*dot*ny;
+        }
         b.x=drum.x+nx*(CR+b.r+GAPC);b.y=drum.y+ny*(CR+b.r+GAPC);
       }
       else if(d>drum.r-b.r-GAPC){
         const nx=dx/d,ny=dy/d,dot=b.vx*nx+b.vy*ny;
-        b.vx-=2*dot*nx;b.vy-=2*dot*ny;b.vx*=damp;b.vy*=damp;
+        if(dot>0){
+          const k=(dot<VSTOP)?1:1+REST;
+          b.vx-=k*dot*nx; b.vy-=k*dot*ny;
+        }
         b.x=drum.x+nx*(drum.r-b.r-GAPC);b.y=drum.y+ny*(drum.r-b.r-GAPC);
-        /* трение о вращающуюся стенку: подтягиваем касательную скорость к скорости стенки */
-        {const tx=-ny,ty=nx, vt=b.vx*tx+b.vy*ty, want=WALLV-vt;
-         b.vx+=tx*want*WFR*h; b.vy+=ty*want*WFR*h;}
-        b.vx+=(Math.random()-.5)*3.5;b.vy+=(Math.random()-.5)*3.5;
+        /* трение о вращающуюся стенку, пропорционально прижиму: ny>0 — мяч лежит
+           на стенке снизу (тянем), ny<0 — висит наверху (не тянем) */
+        {const tx=-ny,ty=nx, vt=b.vx*tx+b.vy*ty, fr=WFR*Math.max(0,ny);
+         b.vx+=tx*(WALLV-vt)*fr*h; b.vy+=ty*(WALLV-vt)*fr*h;}
+        if(dot>KICKMIN){b.vx+=(Math.random()-.5)*3.5;b.vy+=(Math.random()-.5)*3.5;}
       }
     }
     /* коллизии: пространственная сетка вместо перебора всех пар.
@@ -811,13 +827,14 @@ function runLotto(done){
         }
       }
     }
-    }
-    /* кламп после расталкивания: мяч не может остаться в центральном глорпе или за стенкой */
+    /* кламп внутри итерации: расталкивание может выдавить мяч за обод, а следующая
+       итерация разберёт наложения, которые создал кламп */
     for(const b of mixing){
       const dx=b.x-drum.x,dy=b.y-drum.y,d=Math.hypot(dx,dy)||1,nx=dx/d,ny=dy/d;
       const lo=CR+b.r+GAPC, hi=drum.r-b.r-GAPC;
       if(d<lo){b.x=drum.x+nx*lo;b.y=drum.y+ny*lo;}
       else if(d>hi){b.x=drum.x+nx*hi;b.y=drum.y+ny*hi;}
+    }
     }
     }
 
