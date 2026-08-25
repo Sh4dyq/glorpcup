@@ -582,6 +582,10 @@ function runLotto(done){
   const R=Math.max(6,Math.min(22,Math.sqrt(Math.max(1,drum.r*drum.r-CR*CR))*Math.sqrt(0.38/Math.max(1,order.length))));
   const GAPB=Math.max(1,R*.14), GAPC=Math.max(1.5,R*.20);
   const VMAX=Math.max(8,R*1.1), VMAX2=VMAX*VMAX;
+  /* стенка барабана крутится вместе с ним и подтаскивает мячи вверх по восходящей
+     стороне; проскальзывание сильное, иначе всё «примагничивается» к ободу */
+  const SPIN=1/205;   /* рад/мс: угол колеса считаем от общего времени, а не копим по dt */
+  const WALLV=SPIN*(1000/60)*drum.r, WFR=.22;
   const balls=[];
   groups.forEach((g,gi)=>g.forEach((m,pi)=>{
     const a=Math.random()*6.283,rMin=CR+R+GAPC+2,r=rMin+Math.random()*Math.max(0,drum.r-R-GAPC-4-rMin);
@@ -622,12 +626,13 @@ function runLotto(done){
     bgx.fillStyle="#ffe14f";bgx.font="bold "+headFont+"px 'Comic Sans MS',sans-serif";
     bgx.fillText("глурпа "+(gi+1),bx.x+PAD,bx.y+HEAD-9,BW-PAD*2);
   }
-  /* спицы барабана — предрендер, в кадре только rotate+drawImage */
-  const dr=Math.ceil(drum.r)+4, drum2=document.createElement("canvas");
-  drum2.width=drum2.height=dr*2;
-  {const q=drum2.getContext("2d"); q.translate(dr,dr);
-   q.strokeStyle="#2c1c52"; q.lineWidth=4;
-   for(let i=0;i<10;i++){q.beginPath();q.moveTo(0,0);q.lineTo(Math.cos(i*.628)*drum.r,Math.sin(i*.628)*drum.r);q.stroke();}}
+  /* спицы рисуем вектором в кадре: повёрнутый растровый кэш «дёргался» на тонких линиях */
+  function drawSpokes(){
+    ctx.strokeStyle="#2c1c52"; ctx.lineWidth=4; ctx.lineCap="round";
+    ctx.beginPath();
+    for(let i=0;i<10;i++){ctx.moveTo(0,0);ctx.lineTo(Math.cos(i*.628)*drum.r,Math.sin(i*.628)*drum.r);}
+    ctx.stroke(); ctx.lineCap="butt";
+  }
   /* --- спецэффекты --- */
   const FLY=1150;                      /* полёт по спирали до глурпы */
   const FLASH=620;                     /* сколько живёт вспышка приземления */
@@ -741,12 +746,12 @@ function runLotto(done){
     if(dt>100) dt=100;
     const sub=dt>SUB?Math.ceil(dt/SUB):1;         /* дробим только реально длинный кадр */
     const h=(dt/sub)/SUB;                         /* множитель шага, 1.0 == 1/60 c */
-    spin+=dt/205;
+    spin=el*SPIN;
     ctx.clearRect(0,0,W,H);
     ctx.drawImage(bg,0,0);
     /* барабан */
     ctx.save();ctx.translate(drum.x,drum.y);ctx.rotate(spin);
-    ctx.drawImage(drum2,-dr,-dr);
+    drawSpokes();
     if(!coreAnim(coreIdx)) ctx.drawImage(coreSpr(coreIdx),-CR,-CR,CR*2,CR*2);
     ctx.restore();
     ctx.beginPath();ctx.arc(drum.x,drum.y,CR,0,6.283);
@@ -759,11 +764,7 @@ function runLotto(done){
     const damp=Math.pow(.93,h);
     for(let st=0;st<sub;st++){
     for(const b of mixing){
-      b.vy+=.30*h; b.vx+=sw*.5*h;
-      /* тангенциальный подкрут от вращения барабана: мячи катятся по кругу,
-         а не слёживаются в кучу на дне — отсюда и меньше наложений */
-      {const rx=b.x-drum.x,ry=b.y-drum.y,rd=Math.hypot(rx,ry)||1;
-       b.vx+=(-ry/rd)*.22*h; b.vy+=(rx/rd)*.22*h;}
+      b.vy+=.52*h; b.vx+=sw*.35*h;
       {const sp2=b.vx*b.vx+b.vy*b.vy;
        if(sp2>VMAX2){const k=VMAX/Math.sqrt(sp2); b.vx*=k; b.vy*=k;}}
       b.x+=b.vx*h; b.y+=b.vy*h;
@@ -777,7 +778,10 @@ function runLotto(done){
         const nx=dx/d,ny=dy/d,dot=b.vx*nx+b.vy*ny;
         b.vx-=2*dot*nx;b.vy-=2*dot*ny;b.vx*=damp;b.vy*=damp;
         b.x=drum.x+nx*(drum.r-b.r-GAPC);b.y=drum.y+ny*(drum.r-b.r-GAPC);
-        b.vx+=(Math.random()-.5)*7;b.vy+=(Math.random()-.5)*7;
+        /* трение о вращающуюся стенку: подтягиваем касательную скорость к скорости стенки */
+        {const tx=-ny,ty=nx, vt=b.vx*tx+b.vy*ty, want=WALLV-vt;
+         b.vx+=tx*want*WFR*h; b.vy+=ty*want*WFR*h;}
+        b.vx+=(Math.random()-.5)*3.5;b.vy+=(Math.random()-.5)*3.5;
       }
     }
     /* коллизии: пространственная сетка вместо перебора всех пар.
@@ -836,11 +840,11 @@ function runLotto(done){
       if(!skip){ ring(b.x,b.y,b.c,b.r,b.r+46,420,4); spark(b.x,b.y,b.c,10,1.4); emoji(b.x,b.y,2,R*1.5); }
       const mi=mixing.indexOf(b); if(mi>=0) mixing.splice(mi,1);
       flying++;
-      lastPick=b.m.p.name+" → глурпа "+(gi+1);
+      b.pick=b.m.p.name+" → глурпа "+(gi+1);
     }
     if(!skip){
       const left=order.length-issued;
-      if(left>0&&flying===0)
+      if(left>0||flying>0)
         say(lastPick?lastPick+" · осталось "+left:"тыкни в барабан — вылетит глорп");
       else if(left===0&&landed===balls.length)
         say("всё · клик — к глурпам");
@@ -863,7 +867,7 @@ function runLotto(done){
           if(Math.random()<.22) emoji(b.x,b.y,1,b.r*1.2);
         }
         if(k>=1){
-          b.st=2;b.flash=now;flying--;landed++;b.rot=0;
+          b.st=2;b.flash=now;flying--;landed++;b.rot=0;lastPick=b.pick||lastPick;
           if(!skip){
             spark(b.x,b.y,b.c,18,1.6);
             spark(b.x,b.y,"#ffe14f",10,2.1);
