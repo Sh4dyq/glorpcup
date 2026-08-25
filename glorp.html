@@ -540,7 +540,7 @@ function runLotto(done){
 
   const manual=$("#manual").checked;
   /* центральный глорп: крутится вместе с барабаном, меняется при каждой выдаче */
-  const CR=Math.round(drum.r*.26);
+  const CR=Math.round(drum.r*.20);
   let coreIdx=rnd(IMGS.length);
   /* анимированные (gif/webp) на канвасе не двигаются — показываем настоящий <img> поверх */
   const coreEl=$("#coreImg");
@@ -579,12 +579,14 @@ function runLotto(done){
     return c;
   }
   /* мячи чуть мельче: меньше давки/дребезга и есть зазор до центрального глорпа */
-  const R=Math.max(6,Math.min(22,Math.sqrt(Math.max(1,drum.r*drum.r-CR*CR))*Math.sqrt(0.42/Math.max(1,order.length))));
+  const R=Math.max(6,Math.min(22,Math.sqrt(Math.max(1,drum.r*drum.r-CR*CR))*Math.sqrt(0.38/Math.max(1,order.length))));
+  const GAPB=Math.max(1,R*.14), GAPC=Math.max(1.5,R*.20);
+  const VMAX=Math.max(8,R*1.1), VMAX2=VMAX*VMAX;
   const balls=[];
   groups.forEach((g,gi)=>g.forEach((m,pi)=>{
-    const a=Math.random()*6.283,rMin=CR+R+2,r=rMin+Math.random()*Math.max(0,drum.r-R-4-rMin);
+    const a=Math.random()*6.283,rMin=CR+R+GAPC+2,r=rMin+Math.random()*Math.max(0,drum.r-R-GAPC-4-rMin);
     balls.push({gi,pi,m,x:drum.x+Math.cos(a)*r,y:drum.y+Math.sin(a)*r,
-      vx:(Math.random()-.5)*11,vy:(Math.random()-.5)*11,r:R,
+      vx:(Math.random()-.5)*15,vy:(Math.random()-.5)*15,r:R,
       c:fams[m.fam].color,t:String(m.p.seed),av:m.p.av,st:0});
   }));
   const byKey={}; balls.forEach(b=>byKey[b.gi+"_"+b.pi]=b);
@@ -694,6 +696,7 @@ function runLotto(done){
   const live=balls.slice();            /* что рисуем в кадре (осевшие «впекаются» в bg) */
   let flying=0, landed=0;              /* st===1 / st===2 — вместо every() каждый кадр */
   const cell=new Map(), inv=1/(R*2.2), NB=[[0,0],[1,0],[-1,1],[0,1],[1,1]];
+  const ITER=balls.length>260?1:2;   /* проходов расталкивания за подшаг */
   let prev=t0, spin=0;
   const SUB=1000/60;      /* макс. длина физического подшага */
   let lastTxt="", lastPick="";
@@ -738,7 +741,7 @@ function runLotto(done){
     if(dt>100) dt=100;
     const sub=dt>SUB?Math.ceil(dt/SUB):1;         /* дробим только реально длинный кадр */
     const h=(dt/sub)/SUB;                         /* множитель шага, 1.0 == 1/60 c */
-    spin+=dt/300;
+    spin+=dt/205;
     ctx.clearRect(0,0,W,H);
     ctx.drawImage(bg,0,0);
     /* барабан */
@@ -752,25 +755,34 @@ function runLotto(done){
     ctx.strokeStyle="#8bff5a55";ctx.lineWidth=6;ctx.stroke();
 
     /* физика: фикс. шаг 60 Гц, не зависит от частоты монитора */
-    const sw=Math.sin(el/110)*1.1;
-    const damp=Math.pow(.88,h);
+    const sw=Math.sin(el/95)*1.5;
+    const damp=Math.pow(.93,h);
     for(let st=0;st<sub;st++){
     for(const b of mixing){
-      b.vy+=.4*h; b.vx+=sw*.35*h; b.x+=b.vx*h; b.y+=b.vy*h;
+      b.vy+=.30*h; b.vx+=sw*.5*h;
+      /* тангенциальный подкрут от вращения барабана: мячи катятся по кругу,
+         а не слёживаются в кучу на дне — отсюда и меньше наложений */
+      {const rx=b.x-drum.x,ry=b.y-drum.y,rd=Math.hypot(rx,ry)||1;
+       b.vx+=(-ry/rd)*.22*h; b.vy+=(rx/rd)*.22*h;}
+      {const sp2=b.vx*b.vx+b.vy*b.vy;
+       if(sp2>VMAX2){const k=VMAX/Math.sqrt(sp2); b.vx*=k; b.vy*=k;}}
+      b.x+=b.vx*h; b.y+=b.vy*h;
       const dx=b.x-drum.x,dy=b.y-drum.y,d=Math.hypot(dx,dy)||1;
-      if(d<CR+b.r){
+      if(d<CR+b.r+GAPC){
         const nx=dx/d,ny=dy/d,dot=b.vx*nx+b.vy*ny;
         if(dot<0){b.vx-=2*dot*nx;b.vy-=2*dot*ny;b.vx*=damp;b.vy*=damp;}
-        b.x=drum.x+nx*(CR+b.r);b.y=drum.y+ny*(CR+b.r);
+        b.x=drum.x+nx*(CR+b.r+GAPC);b.y=drum.y+ny*(CR+b.r+GAPC);
       }
-      else if(d>drum.r-b.r){
+      else if(d>drum.r-b.r-GAPC){
         const nx=dx/d,ny=dy/d,dot=b.vx*nx+b.vy*ny;
         b.vx-=2*dot*nx;b.vy-=2*dot*ny;b.vx*=damp;b.vy*=damp;
-        b.x=drum.x+nx*(drum.r-b.r);b.y=drum.y+ny*(drum.r-b.r);
-        b.vx+=(Math.random()-.5)*5;b.vy+=(Math.random()-.5)*5;
+        b.x=drum.x+nx*(drum.r-b.r-GAPC);b.y=drum.y+ny*(drum.r-b.r-GAPC);
+        b.vx+=(Math.random()-.5)*7;b.vy+=(Math.random()-.5)*7;
       }
     }
-    /* коллизии: пространственная сетка вместо перебора всех пар */
+    /* коллизии: пространственная сетка вместо перебора всех пар.
+       ITER проходов расталкивания — импульс считаем только на первом. */
+    for(let it=0;it<ITER;it++){
     cell.clear();
     for(let i=0;i<mixing.length;i++){
       const b=mixing[i], k=(b.x*inv|0)+","+(b.y*inv|0);
@@ -785,15 +797,23 @@ function runLotto(done){
           const a=list[i];
           for(let j=(n===0?i+1:0);j<other.length;j++){
             const b=other[j];
-            const dx=b.x-a.x,dy=b.y-a.y,rr=a.r+b.r,d2=dx*dx+dy*dy;
+            const dx=b.x-a.x,dy=b.y-a.y,rr=a.r+b.r+GAPB,d2=dx*dx+dy*dy;
             if(d2>=rr*rr||d2===0) continue;
             const d=Math.sqrt(d2),ov=rr-d,nx=dx/d,ny=dy/d;
             a.x-=nx*ov/2;a.y-=ny*ov/2;b.x+=nx*ov/2;b.y+=ny*ov/2;
             const t=(a.vx-b.vx)*nx+(a.vy-b.vy)*ny;
-            if(t>0){a.vx-=t*nx*.5;a.vy-=t*ny*.5;b.vx+=t*nx*.5;b.vy+=t*ny*.5;}
+            if(it===0&&t>0){a.vx-=t*nx*.72;a.vy-=t*ny*.72;b.vx+=t*nx*.72;b.vy+=t*ny*.72;}
           }
         }
       }
+    }
+    }
+    /* кламп после расталкивания: мяч не может остаться в центральном глорпе или за стенкой */
+    for(const b of mixing){
+      const dx=b.x-drum.x,dy=b.y-drum.y,d=Math.hypot(dx,dy)||1,nx=dx/d,ny=dy/d;
+      const lo=CR+b.r+GAPC, hi=drum.r-b.r-GAPC;
+      if(d<lo){b.x=drum.x+nx*lo;b.y=drum.y+ny*lo;}
+      else if(d>hi){b.x=drum.x+nx*hi;b.y=drum.y+ny*hi;}
     }
     }
 
@@ -817,9 +837,8 @@ function runLotto(done){
       const mi=mixing.indexOf(b); if(mi>=0) mixing.splice(mi,1);
       flying++;
       lastPick=b.m.p.name+" → глурпа "+(gi+1);
-      say(lastPick);
     }
-    if(manual&&!skip){
+    if(!skip){
       const left=order.length-issued;
       if(left>0&&flying===0)
         say(lastPick?lastPick+" · осталось "+left:"тыкни в барабан — вылетит глорп");
