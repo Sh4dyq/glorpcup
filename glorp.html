@@ -628,12 +628,29 @@ function runLotto(done){
     bgx.fillStyle="#ffe14f";bgx.font="bold "+headFont+"px 'Comic Sans MS',sans-serif";
     bgx.fillText("глурпа "+(gi+1),bx.x+PAD,bx.y+HEAD-9,BW-PAD*2);
   }
-  /* спицы рисуем вектором в кадре: повёрнутый растровый кэш «дёргался» на тонких линиях */
-  function drawSpokes(){
-    ctx.strokeStyle="#2c1c52"; ctx.lineWidth=4; ctx.lineCap="round";
+  /* Спицы со смазом. Кончик спицы проходит за кадр ~16 px — одиночная тонкая линия
+     на такой скорости читается как рваные скачки. Рисуем несколько подкадровых
+     положений внутри пройденного за кадр угла: получается ровно тот след, который
+     видит глаз (и камера) при реальном вращении. */
+  const SPOKES=10, SPOKE_A=6.283/SPOKES;
+  function spokePath(a){
     ctx.beginPath();
-    for(let i=0;i<10;i++){ctx.moveTo(0,0);ctx.lineTo(Math.cos(i*.628)*drum.r,Math.sin(i*.628)*drum.r);}
-    ctx.stroke(); ctx.lineCap="butt";
+    for(let i=0;i<SPOKES;i++){
+      const t=a+i*SPOKE_A, cx=Math.cos(t), cy=Math.sin(t);
+      ctx.moveTo(cx*CR*.6,cy*CR*.6); ctx.lineTo(cx*drum.r,cy*drum.r);
+    }
+    ctx.stroke();
+  }
+  const BLUR=1.25;   /* след чуть длиннее пройденного за кадр угла: тогда следы соседних
+                        кадров перекрываются и движение читается непрерывным на 30–144 Гц */
+  function drawSpokes(a,da){
+    const tip=Math.abs(da)*drum.r*BLUR;
+    const n=Math.max(1,Math.min(6,Math.round(tip/3.2)));   /* на паузе — одна линия */
+    ctx.save();
+    ctx.strokeStyle="#2c1c52"; ctx.lineWidth=4; ctx.lineCap="round";
+    ctx.globalAlpha=1/Math.sqrt(n);      /* суммарная плотность следа ≈ как у одной линии */
+    for(let k=0;k<n;k++) spokePath(a-da*BLUR*k/n);
+    ctx.restore();
   }
   /* --- спецэффекты --- */
   const FLY=1150;                      /* полёт по спирали до глурпы */
@@ -753,8 +770,9 @@ function runLotto(done){
     ctx.clearRect(0,0,W,H);
     ctx.drawImage(bg,0,0);
     /* барабан */
-    ctx.save();ctx.translate(drum.x,drum.y);ctx.rotate(spin);
-    drawSpokes();
+    ctx.save();ctx.translate(drum.x,drum.y);
+    drawSpokes(spin,dt*SPIN);
+    ctx.rotate(spin);
     if(!coreAnim(coreIdx)) ctx.drawImage(coreSpr(coreIdx),-CR,-CR,CR*2,CR*2);
     ctx.restore();
     ctx.beginPath();ctx.arc(drum.x,drum.y,CR,0,6.283);
