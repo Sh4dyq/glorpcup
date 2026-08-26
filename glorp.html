@@ -631,42 +631,33 @@ function runLotto(done){
     bgx.fillStyle="#ffe14f";bgx.font="bold "+headFont+"px 'Comic Sans MS',sans-serif";
     bgx.fillText("глурпа "+(gi+1),bx.x+PAD,bx.y+HEAD-9,BW-PAD*2);
   }
-  /* Спицы со смазом. Кончик спицы проходит за кадр ~16 px — одиночная тонкая линия
-     на такой скорости читается как рваные скачки. Рисуем несколько подкадровых
-     положений внутри пройденного за кадр угла: получается ровно тот след, который
-     видит глаз (и камера) при реальном вращении. */
-  const SPOKES=10, SPOKE_A=6.283/SPOKES, SPOKE_W=4;
-  const BLUR=1.25;   /* след чуть длиннее пройденного за кадр угла: тогда следы соседних
-                        кадров смыкаются и движение читается непрерывным на 30–144 Гц */
-  /* Спица со смазом — ЗАЛИВКА сектора, пройденного ею за кадр, а не пачка копий линии:
-     копии расходятся к ободу веером, и след получается полосатым (яркость внутри следа
-     скачет 34→48→34). У сектора профиль ровный. Прозрачность обратна длине смаза —
-     столько же «чернил», размазанных на большую площадь, как при реальной выдержке. */
-  function drawSpokes(a,da){
-    const tip=Math.abs(da)*drum.r*BLUR;
-    if(tip<1.2){                        /* колесо почти стоит — обычная чёткая линия */
-      ctx.save();
-      ctx.strokeStyle="#2c1c52"; ctx.lineWidth=SPOKE_W; ctx.lineCap="round";
-      ctx.beginPath();
+  /* Спицы: тонкие линии, отрисованные ОДИН РАЗ в офскрин-спрайт и просто
+     поворачиваемые каждый кадр. Никаких секторов-«лучей» и пересчёта геометрии —
+     стабильная толщина на любом радиусе и скорости, кадр стоит один drawImage.
+     Смягчение края — параллельный полупрозрачный дубль со сдвигом в ПИКСЕЛЯХ
+     (угловой сдвиг расширял бы след к ободу, т.е. снова давал клин). */
+  const SPOKES=10, SPOKE_A=6.283/SPOKES, SPOKE_W=2;
+  const spokeSpr=(function(){
+    const R=Math.ceil(drum.r)+2, c=document.createElement("canvas");
+    c.width=c.height=Math.round(R*2*DPR);
+    const g=c.getContext("2d");
+    g.setTransform(DPR,0,0,DPR,0,0); g.translate(R,R);
+    g.strokeStyle="#2c1c52"; g.lineCap="round";
+    const r0=CR*.6, r1=drum.r, off=[-.6,0,.6], al=[.35,1,.35];
+    for(let k=0;k<off.length;k++){
+      g.globalAlpha=al[k]; g.lineWidth=k===1?SPOKE_W:1;
+      g.beginPath();
       for(let i=0;i<SPOKES;i++){
-        const t=a+i*SPOKE_A, cx=Math.cos(t), cy=Math.sin(t);
-        ctx.moveTo(cx*CR*.6,cy*CR*.6); ctx.lineTo(cx*drum.r,cy*drum.r);
+        const t=i*SPOKE_A, cx=Math.cos(t), cy=Math.sin(t);
+        const nx=-cy*off[k], ny=cx*off[k];      /* сдвиг по нормали к спице */
+        g.moveTo(cx*r0+nx,cy*r0+ny); g.lineTo(cx*r1+nx,cy*r1+ny);
       }
-      ctx.stroke(); ctx.restore(); return;
+      g.stroke();
     }
-    const w=Math.abs(da)*BLUR, r0=CR*.6, r1=drum.r;
-    const h0=SPOKE_W/2/r0, h1=SPOKE_W/2/r1;   /* полуугол толщины на каждом радиусе */
-    ctx.save();
-    ctx.fillStyle="#2c1c52";
-    ctx.globalAlpha=Math.max(.5,SPOKE_W/(SPOKE_W+tip));
-    for(let i=0;i<SPOKES;i++){
-      const t=a+i*SPOKE_A;
-      ctx.beginPath();
-      ctx.arc(0,0,r1,t-w-h1,t+h1);
-      ctx.arc(0,0,r0,t+h0,t-w-h0,true);
-      ctx.closePath(); ctx.fill();
-    }
-    ctx.restore();
+    return {c:c,R:R};
+  })();
+  function drawSpokes(){
+    ctx.drawImage(spokeSpr.c,-spokeSpr.R,-spokeSpr.R,spokeSpr.R*2,spokeSpr.R*2);
   }
   /* --- спецэффекты --- */
   const FLY=1150;                      /* полёт по спирали до глурпы */
@@ -787,8 +778,8 @@ function runLotto(done){
     ctx.drawImage(bg,0,0,W,H);
     /* барабан */
     ctx.save();ctx.translate(drum.x,drum.y);
-    drawSpokes(spin,dt*SPIN);
     ctx.rotate(spin);
+    drawSpokes();
     if(!coreAnim(coreIdx)) ctx.drawImage(coreSpr(coreIdx),-CR,-CR,CR*2,CR*2);
     ctx.restore();
     ctx.beginPath();ctx.arc(drum.x,drum.y,CR,0,6.283);
