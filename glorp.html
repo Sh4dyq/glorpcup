@@ -376,6 +376,7 @@ function renderGroups(opts){
   $("#result").innerHTML='<div class="card"><h2>🏆 глурпы</h2>'+
     '<div class="groups" id="gr"></div></div>';
   const gr=$("#gr");
+  const frag=document.createDocumentFragment();   /* одна вставка вместо reflow на каждую глурпу */
   groups.forEach((g,i)=>{
     const seenFam={}; let dup=false;
     g.forEach(p=>{ if(seenFam[p.fam]) dup=true; seenFam[p.fam]=1; });
@@ -428,9 +429,12 @@ function renderGroups(opts){
       groups[i].push(m); dragSrc=null;
       renderGroups();
     };
-    gr.appendChild(d);
+    frag.appendChild(d);
   });
-  if(opts.scroll) $("#result").scrollIntoView({behavior:"smooth",block:"start"});
+  gr.appendChild(frag);
+  /* скролл — следующим кадром: иначе smooth-прокрутка стартует в том же кадре,
+     где браузер раскладывает и декодирует весь список, и первые её кадры рвутся */
+  if(opts.scroll) requestAnimationFrame(()=>$("#result").scrollIntoView({behavior:"smooth",block:"start"}));
 }
 
 /* ---- глорпотрон ---- */
@@ -476,6 +480,23 @@ function thumbSrc(i,px){
   const w=im.naturalWidth*sc,h=im.naturalHeight*sc;
   x.drawImage(im,(px-w)/2,(px-h)/2,w,h);
   return THUMB[k]=cn.toDataURL("image/png");
+}
+/* Прогрев кэша миниатюр. Иначе весь toDataURL + декод 50+ новых data-URL
+   приходится на один кадр, где строятся глурпы, — отсюда рывок и дёрганый скролл.
+   Раскладываем работу по кускам в простое (во время лототрона его полно). */
+const warmed={};
+function warmThumbs(list){
+  const q=list.filter(([i,px])=>!THUMB[i+"_"+px]&&!warmed[i+"_"+px]);
+  if(!q.length) return;
+  const idle=window.requestIdleCallback||(f=>setTimeout(()=>f({timeRemaining:()=>8}),0));
+  (function step(dl){
+    while(q.length&&(!dl||dl.timeRemaining()>3)){
+      const [i,px]=q.shift(); warmed[i+"_"+px]=1;
+      const src=thumbSrc(i,px);
+      const im=new Image(); im.src=src; if(im.decode) im.decode().catch(()=>{});
+    }
+    if(q.length) idle(step);
+  })(null);
 }
 
 function runLotto(done){
@@ -1072,6 +1093,9 @@ $("#go").onclick=()=>{
   if(!g){alert("глурп меньше, чем миниглорпов у одного глорптора — добавь глурп");return;}
   pool=[]; fams.forEach(f=>{f.mentor.av=nextAv();f.students.forEach(s=>s.av=nextAv());}); render();
   groups=g; pickAvatars(g.length);
+  /* пока крутится лототрон (или сразу, если он выключен) готовим все аватарки,
+     которые понадобятся списку глурп */
+  warmThumbs(g.flat().map(m=>[m.p.av,96]).concat(avatars.map(a=>[a.av,160])));
   const show=()=>renderGroups({anim:true,scroll:true});
   $("#anim").checked?runLotto(show):show();
 };
