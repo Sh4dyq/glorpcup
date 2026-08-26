@@ -486,8 +486,10 @@ function runLotto(done){
   /* --- размер холста под окно --- */
   const W=Math.round(Math.max(760,Math.min(1700,(window.innerWidth||1200)*.94)));
   const H=Math.round(Math.max(430,Math.min(950,(window.innerHeight||800)*.76)));
-  cv.width=W; cv.height=H;
+  const DPR=Math.max(1,Math.min(3,window.devicePixelRatio||1));
+  cv.width=Math.round(W*DPR); cv.height=Math.round(H*DPR);
   cv.style.width=W+"px"; cv.style.height=H+"px";
+  ctx.setTransform(DPR,0,0,DPR,0,0);   /* дальше вся геометрия — в CSS-пикселях */
 
   /* --- барабан слева --- */
   const drumSide=Math.round(W*.34);
@@ -606,7 +608,7 @@ function runLotto(done){
   cv.onclick=ev=>{
     if(!manual){ skip=true; return; }
     const r=cv.getBoundingClientRect();
-    const x=(ev.clientX-r.left)*cv.width/r.width, y=(ev.clientY-r.top)*cv.height/r.height;
+    const x=(ev.clientX-r.left)*W/r.width, y=(ev.clientY-r.top)*H/r.height;
     if(Math.hypot(x-drum.x,y-drum.y)<=drum.r){ if(issued<order.length) pull=true; else closeNow=true; }
   };
   $("#lotto").onclick=ev=>{
@@ -617,8 +619,9 @@ function runLotto(done){
   document.addEventListener("keydown",onEsc);
   $("#lottoX").onclick=ev=>{ ev.stopPropagation(); abort=true; };
   /* статичный слой зон рисуем один раз */
-  const bg=document.createElement("canvas"); bg.width=W; bg.height=H;
-  const bgx=bg.getContext("2d");
+  const bg=document.createElement("canvas");
+  bg.width=Math.round(W*DPR); bg.height=Math.round(H*DPR);
+  const bgx=bg.getContext("2d"); bgx.setTransform(DPR,0,0,DPR,0,0);
   bgx.textAlign="left";
   for(let gi=0;gi<nG;gi++){
     const bx={x:zoneX+(gi%cols)*cw+(cw-BW)/2, y:12+Math.floor(gi/cols)*ch+(ch-BH)/2};
@@ -632,24 +635,37 @@ function runLotto(done){
      на такой скорости читается как рваные скачки. Рисуем несколько подкадровых
      положений внутри пройденного за кадр угла: получается ровно тот след, который
      видит глаз (и камера) при реальном вращении. */
-  const SPOKES=10, SPOKE_A=6.283/SPOKES;
-  function spokePath(a){
-    ctx.beginPath();
-    for(let i=0;i<SPOKES;i++){
-      const t=a+i*SPOKE_A, cx=Math.cos(t), cy=Math.sin(t);
-      ctx.moveTo(cx*CR*.6,cy*CR*.6); ctx.lineTo(cx*drum.r,cy*drum.r);
-    }
-    ctx.stroke();
-  }
+  const SPOKES=10, SPOKE_A=6.283/SPOKES, SPOKE_W=4;
   const BLUR=1.25;   /* след чуть длиннее пройденного за кадр угла: тогда следы соседних
-                        кадров перекрываются и движение читается непрерывным на 30–144 Гц */
+                        кадров смыкаются и движение читается непрерывным на 30–144 Гц */
+  /* Спица со смазом — ЗАЛИВКА сектора, пройденного ею за кадр, а не пачка копий линии:
+     копии расходятся к ободу веером, и след получается полосатым (яркость внутри следа
+     скачет 34→48→34). У сектора профиль ровный. Прозрачность обратна длине смаза —
+     столько же «чернил», размазанных на большую площадь, как при реальной выдержке. */
   function drawSpokes(a,da){
     const tip=Math.abs(da)*drum.r*BLUR;
-    const n=Math.max(1,Math.min(6,Math.round(tip/3.2)));   /* на паузе — одна линия */
+    if(tip<1.2){                        /* колесо почти стоит — обычная чёткая линия */
+      ctx.save();
+      ctx.strokeStyle="#2c1c52"; ctx.lineWidth=SPOKE_W; ctx.lineCap="round";
+      ctx.beginPath();
+      for(let i=0;i<SPOKES;i++){
+        const t=a+i*SPOKE_A, cx=Math.cos(t), cy=Math.sin(t);
+        ctx.moveTo(cx*CR*.6,cy*CR*.6); ctx.lineTo(cx*drum.r,cy*drum.r);
+      }
+      ctx.stroke(); ctx.restore(); return;
+    }
+    const w=Math.abs(da)*BLUR, r0=CR*.6, r1=drum.r;
+    const h0=SPOKE_W/2/r0, h1=SPOKE_W/2/r1;   /* полуугол толщины на каждом радиусе */
     ctx.save();
-    ctx.strokeStyle="#2c1c52"; ctx.lineWidth=4; ctx.lineCap="round";
-    ctx.globalAlpha=1/Math.sqrt(n);      /* суммарная плотность следа ≈ как у одной линии */
-    for(let k=0;k<n;k++) spokePath(a-da*BLUR*k/n);
+    ctx.fillStyle="#2c1c52";
+    ctx.globalAlpha=Math.max(.5,SPOKE_W/(SPOKE_W+tip));
+    for(let i=0;i<SPOKES;i++){
+      const t=a+i*SPOKE_A;
+      ctx.beginPath();
+      ctx.arc(0,0,r1,t-w-h1,t+h1);
+      ctx.arc(0,0,r0,t+h0,t-w-h0,true);
+      ctx.closePath(); ctx.fill();
+    }
     ctx.restore();
   }
   /* --- спецэффекты --- */
@@ -768,7 +784,7 @@ function runLotto(done){
     const h=(dt/sub)/SUB;                         /* множитель шага, 1.0 == 1/60 c */
     spin=el*SPIN;
     ctx.clearRect(0,0,W,H);
-    ctx.drawImage(bg,0,0);
+    ctx.drawImage(bg,0,0,W,H);
     /* барабан */
     ctx.save();ctx.translate(drum.x,drum.y);
     drawSpokes(spin,dt*SPIN);
